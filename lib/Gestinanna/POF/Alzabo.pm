@@ -6,13 +6,21 @@ use strict;
 
 our $VERSION = '0.04';
 
-our $REVISION = substr q$Revision: 1.14 $, 10;
+our $REVISION = substr q$Revision: 1.16 $, 10;
+
+our $RESOURCE = 'alzabo_schema';
+
+our @XML_ATTRIBUTES = qw(
+    table
+);
 
 use private qw(_row _columns);
 
 __PACKAGE__->valid_params (
     alzabo_schema   => { isa => q(Alzabo::Runtime::Schema) },
 );
+
+#use constant resource => 'alzabo_schema';
 
 sub escape_sql_meta {
     my($self, $s) = @_;
@@ -59,6 +67,10 @@ sub is_public {
 
 sub attributes {
     my $self = shift;
+
+    if(ref $self && !defined $self -> {_columns}) {
+        $self -> {_columns} = { map { $_ -> name => 1 } $self -> {alzabo_schema} -> table($self -> table) -> columns };
+    }
 
     my %attrs = map { $_ => undef } ($self -> SUPER::attributes, keys %{$self -> {_columns}||{}});
 
@@ -118,40 +130,30 @@ sub save {
     # create a row in the table if needed
     my @columns = map { $_ -> name } $self -> {alzabo_schema} -> table($self -> table) -> columns;
     unless(is_live($self)) {
-        if($self -> {_row}) {
-            my $values = {
-                map { $_ => $self -> {$_} }
-                    grep { defined $self -> {$_} }
-                        @columns
-            };
-
-            $self -> {_row} -> make_live( values => $values );
-
-            @$self{@columns} = $self -> {_row} -> select(@columns);
-            return 1;
-        }
-        else {
-            my $values = {
-                map { $_ => $self -> {$_} }
-                    grep { defined $self -> {$_} }
-                        map { $_ -> name } $self -> {alzabo_schema} -> table($self -> table) -> columns
-            };
-            #use Data::Dumper;
-            #main::diag(Data::Dumper -> Dump([$values]));
-            eval {
-                $self -> {_row} =
-                    $self -> {alzabo_schema} -> table($self -> table) -> insert(
-                        values => {
-                            map { $_ => $self -> {$_} }
-                                grep { defined $self -> {$_} }
-                                     @columns
-                        }
-                    );
-                 @$self{@columns} = $self -> {_row} -> select(@columns);
-                 return 1;
-            };
+        my $values = {
+            map { $_ => $self -> {$_} }
+                grep { defined $self -> {$_} }
+                    map { $_ -> name } $self -> {alzabo_schema} -> table($self -> table) -> columns
         };
-        carp "Problems: $@\n" if $@;
+
+        eval {
+            my $row =
+                $self -> {alzabo_schema} -> table($self -> table) -> insert(
+                    values => {
+                        map { $_ => $self -> {$_} }
+                            grep { defined $self -> {$_} }
+                                 @columns
+                    }
+                );
+             $self -> {_row} = $row;
+             @$self{@columns} = $self -> {_row} -> select(@columns);
+             return 1;
+        };
+        if($@) {
+            carp "Problems: $@\n";
+            return 0;
+        }
+        return 1;
     }
 
     # we make potential rows live first so we can have referential 
@@ -258,14 +260,14 @@ sub find {
         $self = bless { %params } => $self;
     }
 
-    my $table = $self -> {_factory} -> {alzabo_schema} -> table($self -> table);
+    my $table = $self -> {alzabo_schema} -> table($self -> table);
     my $where = $self -> _find2where($search, $table, 0);
 
     croak "No search criteria are appropriate" unless @{$where} > 0;
 
     #main::diag("Where: " . Data::Dumper -> Dump([$self -> _find2where($search, $table, 0, 1)]));
 
-    my $cursor = $self -> {_factory} -> {alzabo_schema} -> table($self -> table) -> rows_where(
+    my $cursor = $self -> {alzabo_schema} -> table($self -> table) -> rows_where(
         where => $where,
         order_by => $table -> primary_key,
     );
@@ -384,7 +386,7 @@ sub _find2where {
             }
 
             for my $bit (@{$search}[2..$n]) {
-                if(ref($bit) eq 'SCALAR') {
+                if($search -> [1] ne 'IN' && ref($bit) eq 'SCALAR') {
                     return [] unless eval { $table -> column($$bit) };
                     return [] unless $self -> has_access($$bit, [ 'search' ]);
                     return [] if $self -> has_access($$bit, [ 'read' ]) && !$self -> has_access($search->[0], [ 'read' ]) 
@@ -416,6 +418,34 @@ sub _find2where {
     return $where;
 }
 
+sub build_object_class {
+    my($self, %params) = @_;
+
+    no strict 'refs';
+
+    my($class, $params) = @params{qw(class params)};
+
+    # we want to create a package $class based on $self
+    my $super = ref $self || $self;
+
+    eval { eval "require $class;" };
+    eval "package $class;  use base qw($super);";
+
+    my $table = $params -> {table};
+
+    *{"${class}::table"} = sub ( ) { $table };
+
+    ${"${class}::VERSION"} = 1;
+
+    #*{"${class}::resource"} = sub ( ) { $resource };
+
+#    $class->valid_params (
+#        $resource   => { isa => q(Alzabo::Runtime::Schema) },
+#    );
+    return 1;
+}
+
+
 1;
 
 __END__
@@ -426,12 +456,12 @@ Gestinanna::POF::Alzabo - Support for persistant objects stored in Alzabo
 
 =head1 SYNOPSIS
 
- package My::DataObject::Base;
-
- use base qw(Gestinanna::POF::Alzabo);
-
- use constant table => q(SQLTablename);
-
+ Gestinanna::POF::Alzabo -> build_object_class(
+     class => 'My::DataObject::Base',
+     params => {
+         table => 'SQLTablename',
+     }
+ );
 
  package My::DataObject;
 

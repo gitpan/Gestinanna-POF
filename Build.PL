@@ -9,7 +9,7 @@ my $m = Module::Build -> new(
         Class::Container => 0.07,
         Class::Factory => 1.00,
         Class::Fields => 0.14,
-        Class::Observable => 1.02,
+        Class::Observable => 1,
         Params::Validate => 0.24,
         NEXT => 0,
     },

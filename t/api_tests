@@ -1,5 +1,14 @@
 use strict;
 
+use Alzabo::Config;
+use File::Spec;
+use File::Path;
+
+$Alzabo::Config::CONFIG{'root_dir'} = 'alzabo';
+mkdir 'alzabo' unless -d 'alzabo';
+my $schemas_dir = File::Spec -> catdir(qw(alzabo schemas));
+mkdir $schemas_dir unless -d $schemas_dir;
+
 $Gestinanna::POF::NumTests::API = 21 + 2 + 5*8;
 $Gestinanna::POF::NumTests::EXT_OID_API = 8;
 $Gestinanna::POF::NumTests::SECURE_API = 15;

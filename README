@@ -1,5 +1,5 @@
                        --------------------
-                       Gestinanna::POF 0.06
+                       Gestinanna::POF 0.07
                        --------------------
 
 Gestinanna::POF is a collection of modules providing an abstract 
@@ -52,4 +52,4 @@ Copyright (C) 2002-2004  Texas A&M University.  All Rights Reserved.
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
-$Id: README,v 1.5 2004/02/24 16:22:10 jgsmith Exp $
+$Id: README,v 1.6 2004/06/25 06:53:04 jgsmith Exp $

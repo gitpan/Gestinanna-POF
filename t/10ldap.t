@@ -129,17 +129,28 @@ plan tests => ($Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT
 ###
 ### 1
 ###   
-    
-eval qq"
-package My::LDAP::Type;
 
-use base qw(Gestinanna::POF::LDAP);
+eval {
+Gestinanna::POF::LDAP -> build_object_class(
+    class => 'My::LDAP::Type',
+    params => {
+        'base-dn' => $BASEDN,
+        'id-field' => 'cn',
+        'default-objectclass' => 'device',
+    },
+);
+};
     
-use constant base_dn => '$BASEDN';
-use constant id_field => 'cn';
-use constant default_objectclass => 'device';
-";
-
+#eval qq"
+#package My::LDAP::Type;
+#
+#use base qw(Gestinanna::POF::LDAP);
+#    
+#use constant base_dn => '$BASEDN';
+#use constant id_field => 'cn';
+#use constant default_objectclass => 'device';
+#";
+#
 $e = $@; diag($e) if $e;
 
 ok(!$e, "Defined data type");

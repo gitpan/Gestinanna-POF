@@ -6,9 +6,9 @@ use Gestinanna::POF::Iterator;
 use Carp;
 use strict;
 
-our $VERSION = '0.06';
+our $VERSION = '0.07';
 
-our $REVISION = substr(q$Revision: 1.12 $, 10);
+our $REVISION = substr(q$Revision: 1.14 $, 10);
 
 sub new {
     my $self = shift;
@@ -40,10 +40,21 @@ sub new {
 #    }
 }
 
+#%Gestinanna::POF::RESOURCES;
+
+sub set_resources {
+    my($class, $type, $resources) = @_;
+
+    $class = ref $class || $class;
+
+    $Gestinanna::POF::RESOURCES{$class}{$type} = \%{$resources};
+}
+
 sub _params {
     my($self, $type) = @_;
 
     my $class = $self -> get_factory_class($type);
+    my $self_class = ref $self || $self;
 
     return ( ) unless $class && $class -> isa('Class::Container');
 
@@ -51,16 +62,27 @@ sub _params {
     return (
         map {
             my $resource;
-            if(UNIVERSAL::isa($self -> {$_}, 'ResourcePool')) {
-                $resource = $self -> {_resourcepool} -> {$_} ||= $self -> {$_} -> get();
+            my $resource_id;
+            my $source;
+            if($resource_id = $Gestinanna::POF::RESOURCES{$self_class}{$type}{$_}) {
+                $source = $self -> {_resources} -> {$resource_id};
+            }
+            if(!defined $source) {
+                $source = $self -> {$_};
+            }
+            if(UNIVERSAL::isa($source, 'ResourcePool') || UNIVERSAL::isa($source, 'ResourcePool::LoadBalancer')) {
+                #$resource = $source -> get();
+                if($resource_id) {
+                    $resource = $self -> {_resources} -> {_fetched} -> {$resource_id} ||= $source -> get;
+                }
+                else {
+                    $resource = $self -> {_fetched} -> {$_} ||= $source -> get;
+                }
             }
             else {
-                $resource = $self -> {$_};
+                $resource = $source;
             }
-            ($_ => $resource);
-        }
-        grep {
-            exists $self -> {$_}
+            (defined $resource ? ($_ => $resource) : ( ) );
         }
         @allowed
     );
@@ -69,8 +91,10 @@ sub _params {
 sub DESTROY {
     my $self = shift;
 
-    foreach my $k ( %{$self -> {_resourcepool} || {}} ) {
-        $self -> {$k} -> free($self -> {_resourcepool} -> {$k});
+    foreach my $r ($self, $self -> {_resources}) {
+        foreach my $k ( keys %{$r -> {_fetched} || {}} ) {
+            $r -> {$k} -> free($r -> {_fetched} -> {$k});
+        }
     }
 }
 
@@ -87,7 +111,7 @@ sub find {
         my $cursor;
 
         eval {
-            $cursor = $class -> find(%params, _factory => $self -> {_factory});
+            $cursor = $class -> find($self -> _params($type), %params, _factory => $self -> {_factory});
         };
         my $e = $@;
         if(chomp($e)) {
@@ -146,10 +170,17 @@ Gestinanna::POF - Gestinanna Persistant Object Framework
 
  My::POF::Factory -> register_factory_type( $type => $class );
  My::POF::Factory -> add_factory_type( $type => $class);
+ My::POF::Factory -> set_resource( $type => { resource mapping } );
 
  My::POF::Factory -> new( $type, @params );
 
- $factory = My::POF::Factory -> ( _factory => ( %presets ) );
+ $factory = My::POF::Factory -> ( 
+     _factory => ( 
+         %presets, 
+         _resources => { resource mapping } 
+     ) 
+ );
+
  $object = $factory -> new( $type => ( object_id => $id ) );
 
  $cursor = $factory -> find( $type => ( 
@@ -318,7 +349,7 @@ James G. Smith, <jsmith@cpan.org>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2002-2003 Texas A&M University.  All Rights Reserved.
+Copyright (C) 2002-2004 Texas A&M University.  All Rights Reserved.
 
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

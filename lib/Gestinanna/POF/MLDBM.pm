@@ -10,9 +10,11 @@ use strict;
 
 our $VERSION = '0.04';
 
-our $REVISION = (qw$Revision: 1.9 $)[-1];
+our $REVISION = (qw$Revision: 1.10 $)[-1];
 
-use protected qw(mldbm);
+our $RESOURCE = 'mldbm';
+
+#use protected qw(mldbm);
 
 __PACKAGE__->valid_params (
     mldbm => { can => [qw( FIRSTKEY NEXTKEY TIEHASH )] },
@@ -236,8 +238,39 @@ sub _find2where {
     }
     return; # unsupported operation
 }
-    
 
+sub build_object_class {
+    my($self, %params) = @_;
+
+    no strict 'refs';
+
+    my($class, $params, $config) = @params{qw(class params config)};
+        
+    # we want to create a package $class based on $self
+    my $super = ref $self || $self;
+
+    eval { eval "require $class;" };
+    eval "package $class;  use base qw($super);";
+     
+    my $resource = $params -> {resource} || 'mldbm';
+#     
+    *{"${class}::resource"} = sub ( ) { $resource };
+
+    eval "package $class; use protected qw($resource);";
+
+    foreach my $var (@{$config -> {public} || []}) {
+        eval "package $class; use public q($var);";
+    }
+
+    eval "package $class; use constant object_ids => [qw(". join(" ", @{$config -> {object_ids}||[]}). ")];";
+
+#    $class->valid_params (
+#        $resource => { can => [qw( FIRSTKEY NEXTKEY TIEHASH )] },
+#    );
+
+    return 1;
+}
+    
 1;
 
 __END__

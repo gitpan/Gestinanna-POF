@@ -12,7 +12,13 @@ use Net::LDAP::Entry;
 
 our $VERSION = '0.04';
 
-our $REVISION = (split /\s+/, q$Revision: 1.11 $, 3)[1];
+our $REVISION = (split /\s+/, q$Revision: 1.13 $, 3)[1];
+
+our @XML_ATTRIBUTES = qw(
+    id-field
+    base-dn
+    default-objectclass
+);
 
 #use fields qw(_entry _is_live ldap);
 use public qw(ldap ldap_schema dn);
@@ -260,6 +266,42 @@ our %SYNTAX = (
         #regex =>
     },
 );
+
+sub build_object_class {
+    my($self, %params) = @_;
+                    
+    no strict 'refs';
+                    
+    my($class, $params) = @params{qw(class params)};
+                    
+    # we want to create a package $class based on $self
+    my $super = ref $self || $self;
+                    
+    eval { eval "require $class;" };
+    eval "package $class;  use base qw($super);";
+            
+    my $id_field = $params -> {'id-field'};
+                    
+    *{"${class}::id_field"} = sub ( ) { $id_field };
+                
+    my $base_dn = $params -> {'base-dn'};
+                    
+    *{"${class}::base_dn"} = sub ( ) { $base_dn };
+
+                
+    my $default_oc = $params -> {'default-objectclass'};
+                    
+    *{"${class}::default_objectclass"} = sub ( ) { $default_oc };
+    ${"${class}::VERSION"} = 1;
+                 
+    #*{"${class}::resource"} = sub ( ) { $resource };
+                    
+#    $class->valid_params (
+#        $resource   => { isa => q(Alzabo::Runtime::Schema) },
+#    );         
+    return 1;
+}
+
 
 # backwards compatible definition
 sub object_ids {

@@ -126,44 +126,65 @@ if($@) {
 
 
 { no warnings;
-plan tests => 3*$Gestinanna::POF::NumTests::API + 3*$Gestinanna::POF::NumTests::EXT_OID_API + 3;
+plan tests => 3*$Gestinanna::POF::NumTests::API + 3*$Gestinanna::POF::NumTests::EXT_OID_API + 2;
 }
 
-eval "
-############
+Gestinanna::POF::Container -> build_object_class(
+    class => 'My::Container::Type',
+    config => {
+        objects => {
+            dbm => {
+                class => 'Gestinanna::POF::MLDBM',
+                config => {
+                    public => [qw(this that foo bar)],
+                    object_ids => [qw(id)],
+                },
+            },
+            rdbms => {
+                class => 'Gestinanna::POF::Alzabo',
+                params => {
+                    table => 'Thing',
+                }
+            },
+        },
+    },
+);
 
-package My::MLDBM::Type;
-
-use base qw(Gestinanna::POF::MLDBM);
-
-use public qw(this that foo bar);
-
-use constant object_ids => [qw(id)];
-
-######
-
-package My::Alzabo::Type;
-
-use base qw(Gestinanna::POF::Alzabo);
-
-use constant table => Thing;
-
-
-######
-
-package My::Container::Type;
-
-use base qw(Gestinanna::POF::Container);
-
-__PACKAGE__ -> contained_objects(
-    dbm => 'My::MLDBM::Type',
-    rdbms => 'My::Alzabo::Type',
-);  
-";
-
-$e = $@; diag($e) if $e;
-
-ok(!$e, "Defined test data types");
+#eval "
+#############
+#
+#package My::MLDBM::Type;
+#
+#use base qw(Gestinanna::POF::MLDBM);
+#
+#use public qw(this that foo bar);
+#
+#use constant object_ids => [qw(id)];
+#
+#######
+#
+#package My::Alzabo::Type;
+#
+#use base qw(Gestinanna::POF::Alzabo);
+#
+#use constant table => Thing;
+#
+#
+#######
+#
+#package My::Container::Type;
+#
+#use base qw(Gestinanna::POF::Container);
+#
+#__PACKAGE__ -> contained_objects(
+#    dbm => 'My::MLDBM::Type',
+#    rdbms => 'My::Alzabo::Type',
+#);  
+#";
+#
+#$e = $@; diag($e) if $e;
+#
+#ok(!$e, "Defined test data types");
 
 ###
 ### 1

@@ -97,13 +97,20 @@ if($e = $@) {
 plan tests => ($Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT_OID_API + 3);
 }
 
-eval q"
-package My::Alzabo::Type;
+Gestinanna::POF::Alzabo -> build_object_class(
+    class => 'My::Alzabo::Type',
+    params => {
+        table => 'Thing',
+    },
+);
 
-use base qw(Gestinanna::POF::Alzabo);
-
-use constant table => Thing;
-";
+#eval q"
+#package My::Alzabo::Type;
+#
+#use base qw(Gestinanna::POF::Alzabo);
+#
+#use constant table => Thing;
+#";
 
 $e = $@;  diag($e) if $e;
 

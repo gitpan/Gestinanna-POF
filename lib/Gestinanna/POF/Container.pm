@@ -8,7 +8,7 @@ use strict;
 
 our $VERSION = '0.02';
 
-our $REVISION = substr q$Revision: 1.8 $, 10;
+our $REVISION = substr q$Revision: 1.9 $, 10;
 
 my %ATTRIBUTE_MAPPINGS = ( );
 my %ATTRIBUTE_REVERSE_MAPPINGS = ( );
@@ -43,13 +43,13 @@ sub attribute_mappings {
 
     $class = ref $class || $class;
 
-    my %mappings = @_;
+    my(%mappings) = @_ ? (ref($_[0]) ? %{$_[0]} : @_) : ( );
     $ATTRIBUTE_MAPPINGS{$class} = \%mappings;
 
     $ATTRIBUTE_REVERSE_MAPPINGS{$class} = { };
 
     foreach my $c ( keys %mappings ) {
-        $ATTRIBUTE_REVERSE_MAPPINGS{$class}{$c} = { reverse %{$mappings{$c}} };
+        $ATTRIBUTE_REVERSE_MAPPINGS{$class}{$c} = { reverse %{$mappings{$c} || {}} };
     }
 }
 
@@ -515,6 +515,55 @@ sub delete {
     $_ -> delete foreach values %$cos;
 }
 
+#
+# support for Gestinanna application framework configuration
+#
+
+sub parse_config {
+    my($self, %params) = @_;
+
+    my($site, $params, $nodes) = @params{qw(site params nodes)};
+
+    my $config = { };
+
+    # each node can be a child container
+    foreach my $node (@{$nodes || []}) {
+        if($node -> nodeName eq 'data-provider') {
+            my $id = $node -> getAttribute('name');
+            my $conf = $site -> configure_data_provider($node);
+            $config -> {objects} -> {$id} = $conf if $conf;
+            print "$id Class: ", $config -> {objects} -> {$id} -> {class}, "\n";
+        }
+    }
+
+    return $config;
+}
+
+sub build_object_class {
+    my($self, %params) = @_;
+
+    my($site, $class, $params, $config) = @params{qw(site class params config)};
+
+    # we want to create a package $class based on $self
+    my $super = ref $self || $self;
+
+    eval "package $class;  use base qw($super);";
+
+    foreach my $subob (keys %{$config -> {objects}||{}}) {
+        # need to build each subclass and then combine them into a super-class
+        $config -> {objects} -> {$subob} -> {class} -> build_object_class(
+            class => "${class}::$subob",
+            config => $config -> {objects} -> {$subob} -> {config},
+            params => $config -> {objects} -> {$subob} -> {params},
+        );
+    }
+
+    $class -> contained_objects(
+        map { $_ => "${class}::$_" } keys %{$config -> {objects} || {}}
+    );
+
+    $class -> attribute_mappings( $config -> {mappings} );
+}
 
 1;
 
@@ -526,18 +575,24 @@ Gestinanna::POF::Container - Aggregation of POF object classes
 
 =head1 SYNOPSIS
 
- package My::DataObject;
-
- use base qw(Gestinanna::POF::Container);
-
- __PACKAGE__ -> contained_objects(
-    name => class,
+ Gestinanna::POF::Container -> build_object_class(
+      class => 'My::DataObject',
+      config => {
+          objects => {
+              name => {
+                  class => 'Some::POF::Class',
+                  params => { },
+                  config => { },
+              },
+          },
+          mappings => {
+              name => {
+                  external => internal
+              },
+          },
+      }
  );
 
- __PACKAGE__ -> attribute_mappings(
-    name => { external => internal },
- );
-    
 =head1 DESCRIPTION
 
 This is a container object.  It allows consolidation of multiple 

@@ -32,6 +32,7 @@ t/20container.t
 t/30secure.t
 t/40lock.t
 t/50secure+lock.t
+t/99cleanup.t
 t/99pod.t
 t/api_tests
 t/ldap
@@ -39,3 +40,4 @@ t/lib/My/Locker.pm
 t/lib/Alzabo/Driver/SQLite.pm
 t/lib/Alzabo/RDBMSRules/SQLite.pm
 t/lib/Alzabo/SQLMaker/SQLite.pm
+t/lib/Class/Factory/Util.pm

@@ -6,6 +6,7 @@ use base qw(
     Class::Fields
     );
 
+use Class::ISA ();
 use Params::Validate qw(:types);
 
 use Carp;
@@ -325,6 +326,26 @@ sub discard_transaction {
     else {
         delete $self -> {_transaction};
     }
+}
+
+sub resource_requirements {
+    my $class = shift;
+
+    $class = ref $class || $class;
+    my %params = @_;
+
+    my $resource_attr;
+    no strict 'refs';
+    foreach my $c ($class, Class::ISA::super_path($class)) {
+        $resource_attr = ${"${c}::RESOURCE"};
+        last if defined $resource_attr;
+    }
+
+    warn "resource attribute: $resource_attr\n";
+    return { } unless defined $resource_attr;
+
+    warn "resource: ", $params{params} -> {resource}, "\n";
+    return { $resource_attr => $params{params} -> {resource} };
 }
 
 sub DESTROY {

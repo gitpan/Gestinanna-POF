@@ -41,22 +41,30 @@ if($@) {
 # see if we can do what we need to
 
 { no warnings;
-plan tests => $Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT_OID_API + 3;
+plan tests => $Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT_OID_API + 2;
 }
 
-eval q"
-package My::MLDBM::Type;
+Gestinanna::POF::MLDBM -> build_object_class (
+    class => 'My::MLDBM::Type',
+    config => {
+        public => [qw(this that foo bar)],
+        object_ids => [qw(id)],
+    },
+);
 
-use base qw(Gestinanna::POF::MLDBM);
-
-use public qw(this that foo bar);
-
-use constant object_ids => [qw(id)];
-";
-
-$e = $@; diag($e) if $e;
-
-ok(!$e, "Defined test data type");
+#eval q"
+#package My::MLDBM::Type;
+#
+#use base qw(Gestinanna::POF::MLDBM);
+#
+#use public qw(this that foo bar);
+#
+#use constant object_ids => [qw(id)];
+#";
+#
+#$e = $@; diag($e) if $e;
+#
+#ok(!$e, "Defined test data type");
 
 
 
