@@ -1,4 +1,4 @@
-$Gestinanna::POF::NumTests::API = 18 + 6;
+$Gestinanna::POF::NumTests::API = 18 + 2 + 5*6;
 $Gestinanna::POF::NumTests::SECURE_API = 14;
 $Gestinanna::POF::NumTests::SECURE_RO_API = 8;
 
@@ -201,21 +201,99 @@ sub run_api_tests {
     $e = $@; diag($e) if $e;
     ok(!$e, "Created a bunch of objects");
 
-    my @objects;
-    eval {
-        @objects = $factory -> find(test => (criteria => [ $field, '=', 'foo' ]));
-    };
+    my $cursor;
+    my $id;
+    my @list;
 
-    $e = $@; diag($e) if $e;
-    ok(!$e, "Did a search for foo");
+    my @searches = (
+        [ {
+              where => [ $field, qw(= foo) ],
+          },
+          [ qw(1 13) ],
+        ],
+        [
+          {
+              where => [ OR => (
+                             [ $field, qw~= foo~ ],
+                             [ $field, qw~= bar~ ],
+                         )
+                       ],
+          },
+          [ qw(1 2 4 13) ],
+        ],
+        [
+          {
+             where => [ AND => (
+                             [ NOT => $field, qw!= foo! ],
+                             [ NOT => $field, qw!= bar! ],
+                        )
+                      ],
+          },
+          [ qw(3 5 6 7 8 9 10 11 12 14) ],
+       ],
+       [
+          {
+             where => [ NOT => OR => (
+                             [ $field, qw!= foo! ],
+                             [ $field, qw!= bar! ],
+                        )
+                      ],
+          },
+          [ qw(3 5 6 7 8 9 10 11 12 14) ],
+       ],
+#    );
+#
+#=pod
+       [
+          {
+             where => [ NOT => OR => (
+                             [ $field, qw!= foo! ],
+                             [ $field, qw!= bar! ],
+                        )
+                      ],
+             limit => 5,
+          },
+          [ qw(3 5 6 7 8) ],
+       ],
+       [
+          {
+             where => [ NOT => OR => (
+                             [ $field, qw!= foo! ],
+                             [ $field, qw!= bar! ],
+                        )
+                      ],
+             limit => [ 5, 3 ],
+          },
+          [ qw(6 7 8 9 10) ],
+       ],
+    );
+#=cut
 
-TODO: {
-    local $TODO = 'find() not yet implemented';
+    # 5x@searches tests (was 4 + @{$search->[1]} per search)
+    foreach my $search (@searches) {
+        $cursor = undef;
+        eval {
+            $cursor = $factory -> find(test => (%{$search->[0]}))
+        };
 
-    is(scalar(@objects), 2, "Expect two objects");
-    is(ref $objects[0] && $objects[0]->object_id, 0, "First should be object_id of 0");
-    is(ref $objects[1] && $objects[1]->object_id, 12, "First should be object_id of 12");
-};
+        $e = $@; diag($e) if $e;
+        ok(!$e, "Did a search");
+
+        ok(defined($cursor), "Returned a cursor");
+
+        @list = ( );
+        eval {
+            while($id = $cursor -> next_id) {
+                push @list, $id;
+            }
+        };
+
+        $e = $@; diag($e) if $e;
+        ok(!$e, "Fetch object ids");
+
+        is(scalar(@list), scalar(@{$search->[1]}), "Right number of objects");
+        is_deeply(\@list, $search -> [1], "Right list of objects");
+    }
 
     eval {
         for my $i (0..$#foos) {

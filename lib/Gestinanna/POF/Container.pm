@@ -3,11 +3,12 @@ package Gestinanna::POF::Container;
 use base qw(Gestinanna::POF::Base);
 #use Data::Dumper;
 
-use vars qw($VERSION $REVISION @ISA $AUTOLOAD);
+use Carp;
+use strict;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-our $REVISION = substr q$Revision: 1.4 $, 10;
+our $REVISION = substr q$Revision: 1.6 $, 10;
 
 my %ATTRIBUTE_MAPPINGS = ( );
 my %ATTRIBUTE_REVERSE_MAPPINGS = ( );
@@ -201,29 +202,149 @@ sub unlock {
     return 1;
 }
 
+sub _find_and_next_id {
+    my($iterators, $next_ids) = @_;
+
+    # we know that we either need to prime the ids or we used the last 
+    # one, so either way, get the next_id for each iterator
+    for my $i (keys %$iterators) {
+        $next_ids -> {$i} = $iterators->{$i} -> next_id;
+    }
+
+    my(@its) = sort { 
+          $next_ids->{$a} <=> $next_ids->{$b} 
+                           || 
+        $next_ids -> {$a} cmp $next_ids -> {$b} 
+    } keys %$iterators;
+
+    # if the first and last in the array agree, then all the ones in the middle must agree
+    my $x = $next_ids -> {$its[$#its]};
+    my $match = $next_ids -> {$its[0]} eq $x;
+
+    while(!$match) {
+        # we start the iteration from the back since that's the greatest 
+        # value - nothing below it can be a valid search result
+
+        # we fetch ids from each iterator until we match or exceed the last one
+        # wash, rinse, repeat...
+
+
+        for my $j ($#its-1 .. 0) {
+            $next_ids -> {$its[$j]} = $iterators->{$its[$j]} -> next_id
+                while defined($next_ids -> {$its[$j]}) && (
+                    $x =~ m{^\d+$} ? $next_ids -> {$its[$j]} < $x 
+                                   : $next_ids -> {$its[$j]} lt $x
+                );
+            return unless defined $next_ids -> {$its[$j]};
+        }
+
+        @its = sort { $next_ids->{$a} cmp $next_ids->{$b} } keys %$iterators;
+        $x = $next_ids -> {$its[$#its]};
+        $match = $next_ids -> {$its[0]} eq $x;
+    }
+
+    return $x; # if we have a match, then the last one is it, and we had 
+               # it before we entered the loop($j)
+}
+
+sub _find_or_next_id {
+    my($iterators, $next_ids) = @_;
+
+    # we know that we either need to prime the ids or we used the last
+    # one, so either way, get the next_id for each iterator
+    for my $i (grep { !defined $next_ids -> {$_} } keys %$iterators) {
+        $next_ids -> {$i} = $iterators->{$i} -> next_id;
+    }
+
+    my(@its) = sort {
+          $next_ids->{$a} <=> $next_ids->{$b}
+                           ||
+        $next_ids -> {$a} cmp $next_ids -> {$b}
+    } keys %$iterators;
+
+    my $x = $next_ids -> {$its[0]};
+
+    return unless defined $x;
+
+    my $i = 0;
+
+    delete $next_ids -> {$its[$i++]} 
+        until $i > @its 
+              || ($x =~ /^\d+$/ ? ($next_ids -> {$its[$i]} >  $x) 
+                                : ($next_ids -> {$its[$i]} gt $x)
+                 )
+              ;
+
+    return $x;
+}
+
 sub find {
     my($self, %params) = @_;
+        
+    my $search = delete $params{where};
+    my $limit = delete $params{limit};
+    croak "No search criteria are appropriate" unless UNIVERSAL::isa($search, 'ARRAY');
+        
+    unless(ref $self) {
+        $self = bless { %params } => $self;
+    }
 
-    return () unless $params{criteria};
+    my $class = ref $self;
 
-    keys %{$CONTAINED_OBJECT_CLASSES{$class}||{}}; # reset counter
     my($k, $v);
-    my %objects;
+    my %iterators;
+    my %next_ids;
     while(($k, $v) = each %{$CONTAINED_OBJECT_CLASSES{$class}||{}}) {
-        my @obs = $v -> do_find(%params);
-        return unless @obs && defined $obs[0];
-        $objects{$_ -> object_id}{$k} = $_ for @obs;
+        my $i;
+        eval {
+            $i = $v -> find(
+                where => $search,
+                limit => undef,
+                %params,
+            );
+        };
+        croak $@ if $@ && $@ !~ m{No search criteria are appropriate};
+        $iterators{$k} = $i if ref $i;
     }
 
-    my @ret;
-    my @ks = keys %{$CONTAINED_OBJECT_CLASSES{$class}||{}};
+    croak "No search criteria are appropriate" unless scalar keys %iterators;
+    
+    my $type = $self -> {_factory} -> get_object_type($self);
 
-    foreach my $id ( keys %objects ) {
-        next unless @ks == grep { defined } @{$objects{$id}}{@ks};
-        push @ret, $self -> new(%params, %{$objects{$id}});
+    my $generator;
+    if(scalar(keys %iterators) > 1) {
+        my $i = 0;
+        my $not = 0;
+
+        while($search -> [$i] eq 'NOT' && $i < @$search) {
+            $not = !$not; $i++;
+        }
+
+        if($search -> [0] eq ($not ? 'AND' : 'OR')) {
+            $generator = sub {
+                return _find_or_next_id(\%iterators, \%next_ids);
+            };
+        }
+        else {
+            $generator = sub {
+                return _find_and_next_id(\%iterators, \%next_ids);
+            };
+        }
+    }
+    else {
+        my($iterator) = values %iterators;
+        $generator = sub { $iterator -> next_id };
     }
 
-    return @ret;
+    return Gestinanna::POF::Iterator -> new(
+        factory => $self -> {_factory},
+        type => $type,
+        limit => $limit,
+        generator => $generator,
+        cleanup => sub {
+            %iterators = ( );  %next_ids = ( );
+        },
+    );
 }
 
 sub attributes {
@@ -347,6 +468,45 @@ with the same attribute name to expose that attribute through the
 container as two different attributes.  N.B.: this does not affect 
 attribute names during the container's creation.  This only affects 
 attribute value retrieval and storage.
+
+=head1 BUGS
+
+These are more caveats than bugs since they reveal some of the 
+limitations in aggregating data sources without being horribly 
+inefficient.
+
+=head2 find
+
+=over 4
+
+=item *
+Combining iterators from aggregated data stores
+
+C<Gestinanna::POF::Container> handles searches a little differently 
+because it is aggregating data from multiple data sources.  It will 
+try and construct an iterator for each data source.  As long as at 
+least one data source successfully constructs an iterator, this module 
+will return an iterator.
+
+If the top-level grouping in the search is C<OR>, then the resulting 
+iterator will return the union of the results from the other iterators 
+without duplicating object identifiers.  If the top-level grouping in 
+the search is C<AND>, then the resulting iterator will return the 
+intersection of the results from the other iterators.
+
+In some cases, this behavior may result in slightly different search 
+results than if all the data were in one data store.
+
+=item *
+Comparing one attribute to another attribute
+
+Two attributes can be compared to each other only if they are in the 
+same data store.  This module does not support comparing across data 
+stores since this would be terrible inefficient and the code 
+constructing the search should not be aware of such boundaries.  Patches 
+are welcome to make cross-data-store searching a selectable behavior.
+
+=back
 
 =head1 AUTHOR
 

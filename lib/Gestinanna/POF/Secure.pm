@@ -4,7 +4,7 @@ use base q(Class::Container);
 
 use vars qw($VERSION $REVISION);
 
-$VERSION = '0.01';
+$VERSION = '0.02';
 
 $REVISION = 'something';
 
@@ -125,6 +125,10 @@ This is used to indicate read access to an attribute.
 =item write
 
 This is used to indicate write access to an attribute.
+
+=item search
+
+This is used to indicate the searchability of an attribute.
 
 =back
 

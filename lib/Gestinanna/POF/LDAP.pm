@@ -1,13 +1,15 @@
 package Gestinanna::POF::LDAP;
 
 use base qw(Gestinanna::POF::Base);
+
 use Carp;
 
-use vars qw($VERSION $REVISION @ISA $AUTOLOAD %SYNTAX);
+use Net::LDAP::Constant qw(LDAP_CONTROL_SORTRESULT);
+use Net::LDAP::Control::Sort;
 
-$VERSION = '0.01';
+our $VERSION = '0.02';
 
-$REVISION = (split /\s+/, q$Revision: 1.4 $, 3)[1];
+our $REVISION = (split /\s+/, q$Revision: 1.6 $, 3)[1];
 
 #use fields qw(_entry _is_live ldap);
 use public qw(ldap ldap_schema dn);
@@ -21,7 +23,7 @@ __PACKAGE__->valid_params (
 
 # regular expressions that match a valid value for the given syntax
 # the ones here are from RFC 2252
-%SYNTAX = (
+our %SYNTAX = (
     '1.3.6.1.4.1.1466.115.121.1.1' => {
         desc => 'ACI Item',
         #regex =>
@@ -550,6 +552,140 @@ sub load {
 
         $self -> {_is_live} = 0;
     }
+}
+
+sub find {
+    my($self, %params) = @_;
+        
+    my $search = delete $params{where};
+    my $limit = delete $params{limit};
+    return unless UNIVERSAL::isa($search, 'ARRAY');
+        
+    unless(ref $self) {
+        $self = bless { %params } => $self;
+    }
+
+    my $type = $self -> {_factory} -> get_object_type($self);
+    my $id_field = $self -> id_field;
+
+    my $sort = Net::LDAP::Control::Sort -> new(
+        order => $id_field
+    );
+
+    my $where = $self -> _find2where($search);
+
+    croak "No search criteria are appropriate" if $where eq '';
+
+    my $cursor = $self -> {ldap} -> search( 
+        base => $self -> base_dn,
+        filter => $self -> _find2where($search),
+        attrs => [ $id_field ],
+        control => [ $sort ] 
+    );
+
+    return Gestinanna::POF::Iterator -> new(
+        factory => $self -> {_factory},
+        type => $type,
+        limit => $limit,
+        generator => sub {
+            my $entry = $cursor -> shift_entry;
+            if($row) {
+                return $row -> get_value($id_field);
+            }
+            return;
+        },
+        cleanup => sub {
+        },
+    );
+}
+
+
+my %ops = (
+    '!=' => [qw((! = ))],
+    '>'  => [qw((! <= ))],
+    '<'  => [qw((! >= ))],
+    '>=' => '>=',
+    '<=' => '<=',
+    '='  => '=',
+);
+
+sub _find2where {
+    my $self = shift;
+    my $search = shift;
+
+    my $where;
+    my $n = scalar(@$search) - 1;
+
+    for($search -> [0]) {
+        /^AND$/ && do {
+            my @clauses = grep { @{$_} > 0 } map { $self -> _find2where($_) } @{$search}[1..$n];
+            if(@clauses > 1) {
+                $n = $#clauses; 
+                $where = '(&' . join('', @clauses) . ')';
+            }
+            elsif(@clauses) {
+                $where = $clauses[0];
+            }
+            else {
+                $where = '';
+            }
+        } && next;
+
+        /^OR$/ && do {
+            my @clauses = map { $self -> _find2where($_) } @{$search}[1..$n];
+            if(@clauses > 1) {
+                $n = scalar(@clauses) - 1;
+                $where = '(|' . join('', @clauses) . ')';
+            }
+            elsif(@clauses) {
+                $where = $clauses[0];
+            }
+            else {
+                $where = '';
+            }
+        } && next;
+
+        /^NOT$/ && do {
+            $where = $self -> _find2where([ @{$search}[1..$n] ]);    
+            if($where ne '') {
+                 $where = "(!$where)";
+            }
+            else {
+                $where = '';
+            }
+        } && next;
+
+        # plain clause
+        if(@$search > 3) {
+            $where = '';
+        }
+        else {
+            my($attr, $op, $test) = @$search;
+            my($pre, $post);
+            if(exists $ops{$op} 
+               && $self -> is_public($attr) 
+               && $self -> has_access($attr, [ 'search' ])) 
+            {
+                if(defined $ops{$op}) {
+                    if($ops{$op} -> isa('ARRAY')) {
+                        ($pre, $op, $post) = @{$ops{$op}};
+                    }
+                    else {
+                        $op = $ops{$op};
+                    }
+                }
+                $attr =~ s{[=()]}{\\$1}g;
+                $test =~ s{[=()]}{\\$1}g;
+                
+                $where = "$pre($attr$op$test)$post";
+            }
+            else {
+                $where = ''; # unsupported operation, attribute, or lack of search authorization
+            }
+        }
+    }
+
+    return $where;
 }
 
 sub delete {

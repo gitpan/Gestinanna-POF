@@ -4,9 +4,9 @@ use base qw(Gestinanna::POF::Base);
 use Carp;
 use strict;
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
-our $REVISION = substr q$Revision: 1.7 $, 10;
+our $REVISION = substr q$Revision: 1.9 $, 10;
 
 use private qw(_row _columns);
 
@@ -117,6 +117,7 @@ sub save {
             };
 
             $self -> {_row} -> make_live( values => $values );
+
             return;
         }
         else {
@@ -222,75 +223,153 @@ sub load {
     @{$self}{@columns} = $self -> {_row} -> select(@columns) if $self -> {_row};
 }
 
+
 sub find {
     my($self, %params) = @_;
 
-    my $search = delete $params{criteria};
-    return unless UNIVERSAL::isa($search, 'ARRAY');
+    my $search = delete $params{where};
+    my $limit = delete $params{limit};
+
+    use Data::Dumper;
+    croak "No search criteria are appropriate" unless UNIVERSAL::isa($search, 'ARRAY');
 
     unless(ref $self) {
         $self = bless { %params } => $self;
     }
 
-#use Data::Dumper;
-    #main::diag("Search criteria: ", Data::Dumper -> Dump([$search]));
+    my $table = $self -> {_factory} -> {schema} -> table($self -> table);
+    my $where = $self -> _find2where($search, $table, 0);
 
-    my $where = $self -> _find2where($search);
+    croak "No search criteria are appropriate" unless @{$where} > 0;
 
-    #main::diag("Where: ", Data::Dumper -> Dump([$where]));
-    my $cursor = $self -> {schema} -> table($self -> table) -> rows_where(
-        where => $where
+    #main::diag("Where: " . Data::Dumper -> Dump([$self -> _find2where($search, $table, 0, 1)]));
+
+    my $cursor = $self -> {_factory} -> {schema} -> table($self -> table) -> rows_where(
+        where => $where,
+        order_by => $table -> primary_key,
     );
-    my $row;
-    my @objects;
+
     my $type = $self -> {_factory} -> get_object_type($self);
+
+    my $generator;
+
+    if(UNIVERSAL::isa($table -> primary_key, 'ARRAY')) {
+        $generator = sub {
+            my $row = $cursor -> next;
+            if($row) {
+                return $row -> id_as_string;
+            }
+            return;
+        };
+    }
+    else {
+        my $pk = $table -> primary_key -> name;
+        $generator = sub {
+            my $row = $cursor -> next;
+            if($row) {
+                return $row -> select($pk);
+            }
+            return;
+        };
+    }
+
+    return Gestinanna::POF::Iterator -> new(
+        factory => $self -> {_factory},
+        type => $type,
+        limit => $limit,
+        generator => $generator,
+        cleanup => sub {
+        },
+    );
 }
 
 
 sub _find2where {
     my $self = shift;
     my $search = shift;
+    my $table = shift;
+    my $not = shift;
+    my $debug = shift;
 
     my $where;
-    my $n = scalar(@$search) - 1;
+    my $n = $#$search; #scalar(@$search) - 1;
 
     for($search -> [0]) {
-        /^AND$/ && do { 
-            my @clauses = grep { @{$_} > 0 } map { $self -> _find2where($_) } @{$search}[1..$n];
+        (($not && /^OR$/) || (!$not && /^AND$/)) && do { 
+            my @clauses = grep { @{$_} > 0 } map { $self -> _find2where($_, $table, $not, $debug) } @{$search}[1..$n];
             if(@clauses > 1) {
-                $n = scalar(@clauses) - 1;
-                $where = [ map { @{$_}, 'and' } @clauses[0..$n-1] ];
-                push @$where, @{$clauses[$n]};
+                return [ $clauses[0], map +( 'and', $_ ), @clauses[1..$#clauses] ];
             }
             elsif(@clauses) {
-                $where = $clauses[0];
+                return $clauses[0];
             }
             else {
-                $where = [];
+                return [];
             }
         } && next;
 
-        /^OR$/ && do { 
-            my @clauses = map { $self -> _find2where($_) } @{$search}[1..$n];
+        (($not && /^AND$/) || (!$not && /^OR$/)) && do { 
+            my @clauses = grep { @{$_} > 0 } map { $self -> _find2where($_, $table, $not, $debug) } @{$search}[1..$n];
             if(@clauses > 1) {
-                $n = scalar(@clauses) - 1;
-                $where = [ map { @{$_}, 'or' } @clauses[0..$n-1] ];
-                push @$where, @{$clauses[$n]};
+                return [ $clauses[0], map +( 'or', $_ ), @clauses[1..$#clauses] ];
             }
             elsif(@clauses) {
-                $where = $clauses[0];
+                return $clauses[0];
             }
             else {
-                $where = [];
+                return [];
             }
         } && next;
 
         /^NOT$/ && do { 
-        } && next;
+            return $self -> _find2where([ @{$search}[1..$n] ], $table, !$not, $debug);
+        };
+
         # plain clause
-        my $table = $self -> {schema} -> table($self -> table);
-        if($table -> column($search->[0])) {
-            $where = [ $table -> column($search->[0]), @{$search}[1..$n] ];
+        if(#$self -> is_public($search->[0]) 
+           $self -> has_access($search->[0], [ 'search' ]) 
+           && eval { $table -> column($search->[0]) } ) 
+        {
+            if($debug) {
+                $where = [ "column:" . $search->[0] ];
+            }
+            else {
+                $where = [ $table -> column($search->[0]) ];
+            }
+
+            if($not) {
+                for($search->[1]) {
+                    /^=$/ && do { push @$where, '!=' } && next;
+                    /^!=$/ && do { push @$where, '=' } && next;
+                    /^<=$/ && do { push @$where, '>' } && next;
+                    /^>=$/ && do { push @$where, '<' } && next;
+                    /^<$/ && do { push @$where, '>=' } && next;
+                    /^>$/ && do { push @$where, '<=' } && next;
+                    push @$where, "NOT " . $search->[1];  # default
+                }
+            }
+            else {
+                push @$where, $search -> [1];
+            }
+
+            for my $bit (@{$search}[2..$n]) {
+                if(ref($bit) eq 'SCALAR') {
+                    return [] unless eval { $table -> column($$bit) };
+                    return [] unless $self -> has_access($$bit, [ 'search' ]);
+                    return [] if $self -> has_access($$bit, [ 'read' ]) && !$self -> has_access($search->[0], [ 'read' ]) 
+                                 || !$self -> has_access($$bit, [ 'read' ]) && $self -> has_access($search->[0], [ 'read' ]); 
+
+                    if($debug) {
+                        push @$where, "column:" . $$bit;
+                    }
+                    else {
+                        push @$where, $table -> column($$bit);
+                    }
+                }
+                else {
+                    push @$where, $bit;
+                }
+            }
         }
         else {
             $where = [ ];
@@ -374,21 +453,6 @@ For example,
 This will create a new object with the specified primary key values.  
 The object will be stored in the RDBMS when the C<save> method is 
 called (or when the object is destroyed if C<Commit> is true).
-
-=head1 BUGS
-
-Perhaps not all bugs, but things to watch out for.
-
-=over 4
-
-=item *
-Grouping of search criteria in C<find> method
-
-Alzabo does not provide a way to group clauses in a where statement.  
-Thus, nested search criteria are effectively flattened.  You may not 
-get the results you expect if you nest ANDs and ORs.
-
-=back
 
 =head1 AUTHOR
 

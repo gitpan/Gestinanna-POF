@@ -2,9 +2,12 @@ package Gestinanna::POF;
 
 use base (Class::Factory);
 
-our $VERSION = '0.01';
+use Gestinanna::POF::Iterator;
+use Carp;
 
-our $REVISION = substr(q$Revision: 1.5 $, 10);
+our $VERSION = '0.02';
+
+our $REVISION = substr(q$Revision: 1.7 $, 10);
 
 sub new {
     my $self = shift;
@@ -46,22 +49,22 @@ sub find {
     my $class = $self -> get_factory_class($type);
 
     if($class) {
-        if($class -> isa('Class::Container')) {   
-            # we need to find out all the allowed arguments
-            my @allowed = keys(%{ $class -> allowed_params() });
+        my $cursor;
 
-            return $class -> find(
-                (map { $_ => $self->{$_} } grep { exists $self -> {$_} } @allowed),
-                @params
-            );
+        eval {
+            $cursor = $class -> find(@params, _factory => $self -> {_factory});
+        };
+        my $e = $@;
+        if(chomp($e)) {
+            $e =~ s{\sat\s.*?\sline\s\d+\.?$}{};
         }
-        else {
-            return $class -> find(@params);
-        }
+        croak $e if $e;
+        return $cursor;
     }
-    else {
-        return;
-    }
+
+    return Gestinanna::POF::Iterator -> new(
+        list => [ ],
+    );
 }
 
 sub init {
@@ -111,8 +114,16 @@ Gestinanna::POF - Gestinanna Persistant Object Framework
 
  My::POF::Factory -> new( $type, @params );
 
- my $factory = My::POF::Factory -> ( _factory => ( %presets ) );
- my $object = $factory -> new( $type => ( object_id => $id ) );
+ $factory = My::POF::Factory -> ( _factory => ( %presets ) );
+ $object = $factory -> new( $type => ( object_id => $id ) );
+
+ $cursor = $factory -> find( $type => ( 
+     where => [ ... ], 
+     limit => [ ... ] 
+ ) );
+
+ while($id = $cursor -> next_id) { }
+ while($ob = $cursor -> next) { }
 
 =head1 DESCRIPTION
 
@@ -213,21 +224,42 @@ requested object type are not passed to the object during creation.
 
 =item $factory -> find($type => %params);
 
-** This functionality is still in development. **
+*** This is still in development ***
 
-Given a factory object, this will find all the objects of type C<$type> 
-that match the C<criteria> parameter.  Other parameters may be passed 
+Given a factory object, this will return an iterator which will 
+iterate over all the objects of type C<$type> that match the C<where> 
+parameter.  Other parameters may be passed 
 to override specific parameters that are stored in the factory object.
 
 For example:
 
- $factory -> find(user => (criteria => [ 'age', '>', '18' ]))
+ $cursor = $factory -> find(user => (
+    where => [ 'age', '>', '18' ],
+    limit => 5,
+ ));
 
-This will find all the users with an age of more than 18.
+ while($object = $cursor -> next) {
+     ...
+ }
+
+ while($id = $cursor -> next_id) {
+     ...
+ }
+
+This will iterate through all the users with an age of more than 18 
+(or five, whichever is less).  The limit is optional.
 
 Since the criteria are parsed in the basic data store objects, see 
 L<Gestinanna::POF::Base> for a more detailed explanation of the 
 criteria syntax.
+
+N.B.: This is not the most efficient way to find objects.  It is 
+currently the only way within this framework to do a search that is 
+independent of the underlying data store, though.  Due to requirements 
+for consolidating lazy iterators in L<Gestinanna::POF::Container|Gestinanna::POF::Container>, 
+some iterators are not as efficient as they could be (e.g., the MLDBM 
+iterator must create a list of all the keys and then sort them, though 
+finding the next valid object identifier is done lazily).
 
 =back
 
@@ -236,6 +268,7 @@ criteria syntax.
 L<Class::Factory>,
 L<Gestinanna::POF::Base>,
 L<Gestinanna::POF::Container>,
+L<Gestinanna::POF::Iterator>,
 L<Gestinanna::POF::Lock>,
 L<Gestinanna::POF::Secure>.
 

@@ -7,6 +7,7 @@ lib/Gestinanna/POF.pm
 lib/Gestinanna/POF/Alzabo.pm
 lib/Gestinanna/POF/Base.pm
 lib/Gestinanna/POF/Container.pm
+lib/Gestinanna/POF/Iterator.pm
 lib/Gestinanna/POF/LDAP.pm
 lib/Gestinanna/POF/Lock.pm
 lib/Gestinanna/POF/MLDBM.pm

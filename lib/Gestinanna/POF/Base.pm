@@ -12,7 +12,7 @@ use Carp;
 
 use vars qw($AUTOLOAD);
 
-our $VERSION = '0.01';
+our $VERSION = '0.02';
 
 our $REVISION = 'something';
 
@@ -296,12 +296,23 @@ data store.
 
 =head2 find
 
- $class -> find(%params)
+ $factory -> find($type => ( 
+     where => [ ... ],
+     limit => [ ... ],
+ ));
 
- $factory -> find($type => ( %params ))
+=over 4
 
-The parameters are those usually accepted for object creation as well 
-as the parameter C<criteria> which specifies the search parameters.
+=item limit
+
+The limit may be either a scalar value, in which case no more than 
+that number of objects or object identifiers will be returned, or an 
+array reference.  The array reference should point to an array with 
+two elements.  The first element indicates the maximum number of 
+objects or object identifiers to return.  The second element indicates 
+at which position to begin.
+
+=item where
 
 An example may be the quickest way to illustrate how the search 
 criteria work:
@@ -335,10 +346,19 @@ This would also be comparable to the following LDAP search string:
    )
  )
 
+=back
+
+Data stores are expected to support AND, OR, and negation of statements 
+via NOT as well as the =, !=, <, >, <=, and >= comparisons.  More may 
+be added later (such as IN or BETWEEN from SQL and an existance operation 
+similar to LDAP's =* comparison or SQL's IS NULL).
+
 This method should return a list of objects which satisfy the search 
 criteria.  If no objects match, an empty list should be returned.  If 
 there is an error, then either an exception should be thrown or 
 C<undef> returned.
+
+See L<Gestinanna::POF::Iterator> for more information.
 
 =head1 TRANSACTIONS
 

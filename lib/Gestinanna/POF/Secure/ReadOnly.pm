@@ -21,7 +21,7 @@ sub _and_access {
         return 1;
     }
 
-    return 'read' eq $access;
+    return 'read' eq $access || 'search' eq $access;
 }
 
 sub _or_access {
@@ -35,7 +35,7 @@ sub _or_access {
         return 0;
     }
 
-    return 'read' eq $access;
+    return 'read' eq $access || 'search' eq $access;
 }
 
 1;

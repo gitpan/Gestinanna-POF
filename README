@@ -1,5 +1,5 @@
                        --------------------
-                       Gestinanna::POF 0.01
+                       Gestinanna::POF 0.02
                        --------------------
 
 Gestinanna::POF is a collection of modules providing an abstract 
@@ -14,9 +14,9 @@ locking protocol is supported.  Transaction support is still in
 development.
 
 Gestinanna::POF tries to stress security over performance, so it may 
-not perform as well as other frameworks such as SPOPS.  If you do not 
-need attribute-level security, you will probably want to look at one 
-of the other more mature frameworks also available on CPAN.
+not perform as well as other frameworks.  If you do not need attribute-
+level security, you will probably want to look at one of the more 
+mature frameworks available on CPAN.
 
 To install Gestinanna::POF, download the distribution, untar, and cd 
 into the resulting directory.  There, run the following:
@@ -51,4 +51,4 @@ Copyright (C) 2002-2003  Texas A&M University.  All Rights Reserved.
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
-$Id: README,v 1.1 2003/06/09 20:40:01 jgsmith Exp $
+$Id: README,v 1.2 2003/06/16 02:42:51 jgsmith Exp $

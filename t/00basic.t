@@ -8,6 +8,7 @@ my @classes = qw(
     Gestinanna::POF::Container
     Gestinanna::POF::LDAP
     Gestinanna::POF::Secure
+    Gestinanna::POF::Iterator
 );
 
 eval {
