@@ -10,7 +10,7 @@ use strict;
 
 our $VERSION = '0.04';
 
-our $REVISION = (qw$Revision: 1.8 $)[-1];
+our $REVISION = (qw$Revision: 1.9 $)[-1];
 
 use protected qw(mldbm);
 
@@ -18,10 +18,22 @@ __PACKAGE__->valid_params (
     mldbm => { can => [qw( FIRSTKEY NEXTKEY TIEHASH )] },
 );
 
+sub is_public {
+    my($self, $field) = @_;
+
+    return 1 if $self -> SUPER::is_public($field);
+
+    my %ids = map { $_ => undef } @{$self -> object_ids || []};
+
+    return 1 if exists $ids{$field};
+
+    return 0;
+}
+
 sub save {
     my $self = shift;
 
-    my @keys = grep { !$self -> is_inherited($_) } $self -> show_fields('Public');
+    my @keys = grep { !$self -> is_inherited($_) } $self -> attributes;
 
     $self -> {mldbm} -> STORE(
         $self -> object_id,
@@ -47,9 +59,9 @@ sub delete {
 
     $self -> {mldbm} -> DELETE($self -> object_id);
 
-    $self -> object_id(undef);
+    #$self -> object_id(undef);
 
-    delete @{ $self }{ grep { !$self -> is_inherited($_) } $self -> show_fields('Public') };
+    delete @{ $self }{ grep { !$self -> is_inherited($_) } $self -> attributes };
 }
 
 sub find {

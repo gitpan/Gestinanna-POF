@@ -8,7 +8,7 @@ use strict;
 
 our $VERSION = '0.02';
 
-our $REVISION = substr q$Revision: 1.6 $, 10;
+our $REVISION = substr q$Revision: 1.8 $, 10;
 
 my %ATTRIBUTE_MAPPINGS = ( );
 my %ATTRIBUTE_REVERSE_MAPPINGS = ( );
@@ -72,7 +72,7 @@ sub get_attribute_name {
     my $class = ref $self || $self;
 
     return $ATTRIBUTE_MAPPINGS{$class}{$contained}{$attr}
-        if exists $ATTRIBUTE_MAPPINGS{$class}{$contained}{$attr};
+        if defined $ATTRIBUTE_MAPPINGS{$class}{$contained}{$attr};
 
     return $attr;
 }
@@ -83,9 +83,27 @@ sub get_attribute_reverse_name {
     my $class = ref $self || $self;
         
     return $ATTRIBUTE_REVERSE_MAPPINGS{$class}{$contained}{$attr}
-        if exists $ATTRIBUTE_REVERSE_MAPPINGS{$class}{$contained}{$attr};
+        if defined $ATTRIBUTE_REVERSE_MAPPINGS{$class}{$contained}{$attr};
             
     return $attr;
+}
+
+sub object_ids {
+    my $self = shift;
+
+    return [ ] unless ref $self;
+
+    my $cos = $self -> _contained_pof_objects;
+
+    my @ids;
+
+    while(my($k, $v) = each %$cos) {
+        push @ids, map { $self -> get_attribute_reverse_name($k, $_) } @{$v -> object_ids || []};
+    }
+
+    #main::diag("Object ids: " . join(", ", keys %{ +{ map { $_ => undef } @ids } }));
+
+    return [ keys %{ +{ map { $_ => undef } @ids } } ];
 }
 
 
@@ -112,7 +130,7 @@ sub get {
         }
     }
     foreach my $k (@attrs) {
-        $data{$k} = [ keys %{ +{map { $_ => undef } @{$data{$k}||[]} } } ];
+        $data{$k} = [ keys %{ +{ map { $_ => undef } grep { defined } @{$data{$k}||[]} } } ];
         $data{$k} = $data{$k} -> [0] if @{$data{$k}} < 2;
     }
     return @data{@attrs};
@@ -205,6 +223,8 @@ sub unlock {
 sub _find_and_next_id {
     my($iterators, $next_ids) = @_;
 
+    #local($Gestinanna::POF::CAN_WEAKEN) = 0;
+
     # we know that we either need to prime the ids or we used the last 
     # one, so either way, get the next_id for each iterator
     for my $i (keys %$iterators) {
@@ -215,9 +235,11 @@ sub _find_and_next_id {
           $next_ids->{$a} <=> $next_ids->{$b} 
                            || 
         $next_ids -> {$a} cmp $next_ids -> {$b} 
-    } keys %$iterators;
+    } grep { defined $next_ids -> {$_} } keys %$iterators;
 
     # if the first and last in the array agree, then all the ones in the middle must agree
+    return unless @its;
+
     my $x = $next_ids -> {$its[$#its]};
     my $match = $next_ids -> {$its[0]} eq $x;
 
@@ -250,6 +272,8 @@ sub _find_and_next_id {
 sub _find_or_next_id {
     my($iterators, $next_ids) = @_;
 
+    #local($Gestinanna::POF::CAN_WEAKEN) = 0;
+
     # we know that we either need to prime the ids or we used the last
     # one, so either way, get the next_id for each iterator
     for my $i (grep { !defined $next_ids -> {$_} } keys %$iterators) {
@@ -260,7 +284,9 @@ sub _find_or_next_id {
           $next_ids->{$a} <=> $next_ids->{$b}
                            ||
         $next_ids -> {$a} cmp $next_ids -> {$b}
-    } keys %$iterators;
+    } grep { defined $next_ids -> {$_} } keys %$iterators;
+
+    return unless @its && defined $its[0];
 
     my $x = $next_ids -> {$its[0]};
 
@@ -269,7 +295,7 @@ sub _find_or_next_id {
     my $i = 0;
 
     delete $next_ids -> {$its[$i++]} 
-        until $i > @its 
+        until $i >= @its 
               || ($x =~ /^\d+$/ ? ($next_ids -> {$its[$i]} >  $x) 
                                 : ($next_ids -> {$its[$i]} gt $x)
                  )
@@ -309,7 +335,7 @@ sub find {
 
     croak "No search criteria are appropriate" unless scalar keys %iterators;
     
-    my $type = $self -> {_factory} -> get_object_type($self);
+    my $type = $self -> object_type;
 
     my $generator;
     if(scalar(keys %iterators) > 1) {
@@ -397,18 +423,77 @@ sub is_live {
 sub save {
     my $self = shift;
 
-    return unless $self -> object_type;
+#    return unless $self -> object_type;
 
     my $cos = $self -> _contained_pof_objects;
 
-    # no transactions at this level
+    # no transactions at this level (?)
     $_ -> save foreach values %$cos;
 }
 
+sub _build_object_id {
+    my($self, %fields) = @_;
+
+    #main::diag("$self->_build_object_id called with: " . Data::Dumper->Dump([\%fields]));
+
+    if(keys %fields == 1) {
+        return( (values %fields)[0] );
+    }
+
+    foreach my $attr (keys %fields) {
+        $fields{$attr} =~ s{([\\,=()])}{\\$1};
+    }
+
+    return join(",", map { "$_=$fields{$_}" } keys %fields);
+}
+
+sub init {
+    my($self, %params) = @_;
+
+    $self -> SUPER::init(%params);
+
+    #main::diag("self: " . Data::Dumper -> Dumper([$self]));
+
+    my $class = ref $self || $self;
+    my $cos = $CONTAINED_OBJECT_CLASSES{$class};
+
+    #main::diag("Contained objects: " . join(", ", sort keys %$cos));
+
+    my $object_id = delete $params{object_id};
+
+    while(my($k, $c) = each %$cos) {
+        my @allowed = keys(%{ $c -> allowed_params() });
+        my %p = (map { $_ => $params{$_} } grep { exists $params{$_} } @allowed);
+        my $v = $c -> new(%p);
+        $self -> {$k} = $v;
+    }
+
+    $self -> process_object_id($object_id, %params);
+
+    $cos = $self -> _contained_pof_objects;
+
+    while(my($k, $v) = each %$cos) {
+        my %fields;
+        my @ids = @{$v -> object_ids || []};
+        @fields{@ids} = @$self{@ids};#  = map { $_ => $self->{$_} } @{$v -> object_ids || []};
+        # build object_id
+        my $oid = $self -> _build_object_id( %fields );
+        #while(my($of, $tf) = each %fields) {
+        #    $v -> $tf($self -> {$of});
+        #}
+        my @allowed = keys(%{ $v -> allowed_params() });
+        my %p = (map { $_ => $params{$_} } grep { exists $params{$_} } @allowed);
+        $self -> {$k} = $v -> init(%p, object_id => $oid);
+    }
+
+    return $self;
+}
+    
 sub load {
     my $self = shift;
 
-    return unless $self -> object_type && $self -> object_id;
+    #return unless $self -> object_type && $self -> object_id;
+    return if $self -> is_live;
 
     my $cos = $self -> _contained_pof_objects;
 
@@ -421,11 +506,12 @@ sub load {
 sub delete {
     my $self = shift;
 
-    return unless $self -> object_type && $self -> object_id;
+#    return unless $self -> object_type && $self -> object_id;
+    return unless $self -> is_live;
  
     my $cos = $self -> _contained_pof_objects;
     
-    # no transactions at this level
+    # no transactions at this level (?)
     $_ -> delete foreach values %$cos;
 }
 

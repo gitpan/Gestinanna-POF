@@ -4,17 +4,18 @@ use base (Class::Factory);
 
 use Gestinanna::POF::Iterator;
 use Carp;
+use strict;
 
-our $VERSION = '0.04';
+our $VERSION = '0.06';
 
-our $REVISION = substr(q$Revision: 1.10 $, 10);
+our $REVISION = substr(q$Revision: 1.12 $, 10);
 
 sub new {
     my $self = shift;
 
     if($_[0] eq '_factory') {
         shift;
-        $self = bless { %{(ref($self) ? $self : {})}, @_ } => $self;
+        $self = bless { %{(ref($self) ? $self : {})}, @_ } => (ref $self || $self);
         $self -> {_factory} = $self;
         return $self;
     }
@@ -23,19 +24,53 @@ sub new {
 
     my($type, @params) = @_;
 
+    return $self -> SUPER::new($type, $self -> _params($type), @params);
+
+    #if($class && $class -> isa('Class::Container')) {
+        # we need to find out all the allowed arguments
+    #    my @allowed = keys(%{ $class -> allowed_params() });
+#
+#        return $self -> SUPER::new($type, 
+#            (map { $_ => $self->{$_} } grep { exists $self -> {$_} } @allowed),
+#            @params
+#        );
+#    }
+#    else {
+#        return $self -> SUPER::new($type, @params);
+#    }
+}
+
+sub _params {
+    my($self, $type) = @_;
+
     my $class = $self -> get_factory_class($type);
 
-    if($class && $class -> isa('Class::Container')) {
-        # we need to find out all the allowed arguments
-        my @allowed = keys(%{ $class -> allowed_params() });
+    return ( ) unless $class && $class -> isa('Class::Container');
 
-        return $self -> SUPER::new($type, 
-            (map { $_ => $self->{$_} } grep { exists $self -> {$_} } @allowed),
-            @params
-        );
-    }
-    else {
-        return $self -> SUPER::new($type, @params);
+    my @allowed = keys(%{ $class -> allowed_params() });
+    return (
+        map {
+            my $resource;
+            if(UNIVERSAL::isa($self -> {$_}, 'ResourcePool')) {
+                $resource = $self -> {_resourcepool} -> {$_} ||= $self -> {$_} -> get();
+            }
+            else {
+                $resource = $self -> {$_};
+            }
+            ($_ => $resource);
+        }
+        grep {
+            exists $self -> {$_}
+        }
+        @allowed
+    );
+}
+
+sub DESTROY {
+    my $self = shift;
+
+    foreach my $k ( %{$self -> {_resourcepool} || {}} ) {
+        $self -> {$k} -> free($self -> {_resourcepool} -> {$k});
     }
 }
 

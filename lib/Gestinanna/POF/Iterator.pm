@@ -45,7 +45,7 @@ sub new {
 sub _next_id {
     my $self = shift;
 
-    return if defined( $self -> {limit} -> [0] ) 
+    return if defined( $self -> {limit} -> [0] ) && defined ($self -> {count})
               && $self -> {count} > $self -> {limit} -> [0]; # - 2;
 
     if($self -> {list}) {
@@ -105,6 +105,8 @@ sub get_all_ids {
 
     my $id;
     push @ids, $id while $id = $self -> next_id;
+
+    warn "Returning ids: [" . join("; ", @ids) . "]\n";
 
     return \@ids;
 }

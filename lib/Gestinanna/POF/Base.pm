@@ -20,18 +20,104 @@ use public qw(object_id Commit);
 use private qw(_factory);
 
 __PACKAGE__->valid_params (
-    object_id   => { type => SCALAR, optional => 1},
+    object_id   => { type => SCALAR | UNDEF, optional => 1},
     Commit      => { type => SCALAR, optional => 1},
     _factory    => { isa => 'Gestinanna::POF' },
 );
 
+use constant object_ids => [qw(object_id)];
+
+use strict;
+
+sub object_id {
+    my $self = shift;
+
+    my $fields = $self -> object_ids;
+
+    #if(@$fields == 1) {
+    #    my $f = $fields -> [0];
+    #    return $self -> $f;
+    #}
+
+    #warn "object_id fields: ", join(", ", @$fields), "\n";
+
+    my %attrs = map { defined($self -> {$_}) ? ($_ => $self -> {$_}) : () } @$fields;
+
+    #warn "object_id attributes: ", Data::Dumper -> Dump([\%attrs]);
+
+    if(1 == keys %attrs) {
+        return( (values %attrs)[0] );
+    }
+     
+    foreach my $attr (keys %attrs) {
+        $attrs{$attr} =~ s{([\\,=()])}{\\$1}; 
+    } 
+
+    return join(",", map { "$_=$attrs{$_}" } keys %attrs);
+}
+
+sub process_object_id {
+    my($self, $objectid, %params) = @_;
+
+    #main::diag("$self -> process_object_id($objectid, ...)");
+
+    my %attrs;
+
+    my $keys = $self -> object_ids;
+
+    $keys = [ $keys] unless ref $keys;
+
+    #main::diag("object ids: " . join(", ", @$keys));
+
+    if($objectid =~ m{=}) {
+        # N.B.: These regular expressions are being applied in _reverse_
+        #       so that we can do variable-length look-behind assertions.
+        #warn "object id: $objectid\n";
+        my @pairs = split(/\s*,(?:\\\\)*(?=[^\\])/, reverse $objectid);
+        #warn "Pairs: " . join("; ", @pairs) . "\n";
+        %attrs = map {
+                     map {
+                         $_ = reverse $_
+                     } reverse split(/=(?:\\\\)*(?=[^\\])/, $_, 2)
+                 } @pairs;
+    }
+    elsif(@$keys == 1) {
+        $attrs{$keys->[0]} = $objectid;
+    }
+
+    #main::diag("Keys found in object id: " . join(", ", keys %attrs));
+
+    $attrs{$keys->[0]} = $objectid
+        unless keys %attrs;
+    
+    my %attrs_for_this_ob = map { $_ => $params{$_} } grep { defined $params{$_} } @$keys;
+    %attrs_for_this_ob = map { $_ => $attrs{$_} } grep { defined $attrs{$_} } @$keys;
+
+    #main::diag("Attributes for this ob: " . Data::Dumper -> Dump([\%attrs_for_this_ob]));
+
+    #$self = $self -> SUPER::new(%params, %attrs_for_this_ob);
+    if(keys %attrs_for_this_ob) {
+        @$self{keys %attrs_for_this_ob} = values %attrs_for_this_ob;
+
+        use Data::Dumper;
+        #main::diag("Attrs from object id: " . Data::Dumper -> Dump([\%attrs_for_this_ob]));
+        #main::diag("Object id: " . $self -> object_id);
+
+        return 1;
+    }
+
+    return 0;
+}
+
 # for Gestinanna::POF -- Class::Factory stuff
 sub init {
-    my($self, @params) = @_;
+    my($self, %params) = @_;
 
-    $self = $self -> SUPER::new(@params);
+    $self = $self -> SUPER::new(%params);
 
-    $self -> load if defined $self -> object_id;
+    if($self -> process_object_id(delete $params{object_id}, %params)) {
+        $self -> load;
+    }
 
     return $self;
 }
@@ -40,7 +126,12 @@ sub attributes {
     my $self = shift;
 
     # returns the attributes defined by this class
-    return $self -> show_fields('Public');
+    #return $self -> show_fields('Public');
+    my @attrs = $self -> show_fields('Public');
+    
+    push @attrs, @{$self -> object_ids || []};
+    
+    return keys %{ +{map {$_ => undef} @attrs } };  # make them unique
 }
 
 sub make_accessor {
@@ -48,11 +139,43 @@ sub make_accessor {
     my $field = shift;
 
     my $accessor = $class -> SUPER::make_accessor($field);
+
+    return $accessor if $field eq 'Commit';
+
     return sub {
-        return unless @_ > 1 ? $_[0] -> has_access($field, [ qw(write) ])
+        return if @_ > 1 && defined $_[0] -> {object_id};
+        goto &$accessor;
+    } if $field eq 'object_id';
+
+    #my %ids = map {$_ => undef} @{$class -> object_ids || []};
+
+    return sub {
+        return if @_ > 1;
+        goto &$accessor;
+    } if $class -> is_object_id($field);
+
+    return sub {
+        return unless @_ > 1 ? !$_[0] -> is_object_id($field)
+                                 && $_[0] -> has_access($field, [ qw(write) ])
                              : $_[0] -> has_access($field, [ qw(read) ]);
         goto &$accessor;
     };
+}
+
+sub is_object_id {
+    my($self, $field) = @_;
+
+    return 0 + grep { $_ eq $field } @{$self -> object_ids || []};
+}
+
+sub compare {
+    my($self, $field, $value) = @_;
+
+    return unless $self -> is_public($field);
+
+    return unless $self -> has_access($field, [ [ qw(search compare) ] ]);
+
+    return $self -> {$field} eq $value;
 }
 
 sub find {
@@ -72,7 +195,8 @@ sub AUTOLOAD {
     # If it's a public field, set up a named closure as its
     # data accessor.
     if ( $self->is_public($field) ) {
-        *{$class."::$field"} = $class -> make_accessor($field);
+        no strict 'refs';
+        *{$class."::$field"} = $self -> make_accessor($field); # sometimes we need an instance
         goto &{$class."::$field"};
     } else {
         carp "'$field' is not a public data member of '$class'";
@@ -126,6 +250,8 @@ sub object_type {
 
     my $class = ref $self || $self;
 
+    return unless defined $self -> {_factory};
+
     return $self -> {_factory} -> get_object_type($class);
 }
 
@@ -163,7 +289,7 @@ sub log_transaction_rollback {
     my($self, @code) = @_;
 
     return unless $self -> {_transaction};
-    unshift @{$t -> {_transaction} -> {rollback}}, @code;
+    #unshift @{$t -> {_transaction} -> {rollback}}, @code;
 }
    
 sub commit_transaction {  
@@ -274,6 +400,20 @@ Gestinanna::POF::Base - Base framework object
 This module provides the base for the data store classes.   Data store 
 classes should never be used directly to create objects or access 
 data.  Instead, object classes should be derived from the data store classes.
+
+=head1 CREATING/LOADING OBJECTS
+
+Objects should be created or loaded through the factory object.
+
+ $object = $factory -> new(object_type => object_id => $id);
+
+This is the minimum that should be used.  The first parameter is the 
+object type that is registered with the factory.  The remaining 
+parameters are used to find the object in the data store or to create 
+the object.
+
+The object id (C<$id> in the above example) may be either a single string or an LDAP-like rdn.
+
 
 =head1 METHODS
 

@@ -46,6 +46,7 @@ my $mesg;
 eval {
     $ldap = client();
 
+    no warnings;
     $mesg = $ldap->bind($MANAGERDN, password => $PASSWD);
 };
 
@@ -121,7 +122,9 @@ foreach my $parent (sort { length($a) <=> length($b) } @parents) {
     #}
 }
 
-plan tests => ($Gestinanna::POF::NumTests::API + 3);
+{ no warnings;
+plan tests => ($Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT_OID_API + 3);
+}
 
 ###
 ### 1
@@ -173,6 +176,8 @@ ok(!$e, "Instantiating factory");
 $INC{'My/LDAP/Type.pm'} = 1;
 
 run_api_tests($factory, 'test-device', 'description');
+
+run_ext_object_id_tests($factory, cn => 'test-device', 'description');
 
 
 __END__

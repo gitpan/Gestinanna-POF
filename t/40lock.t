@@ -52,7 +52,9 @@ if($@) {
 
 # see if we can do what we need to
 
+{ no warnings;
 plan tests => $Gestinanna::POF::NumTests::API + 3 + 9;
+}
 
 eval "
 package My::MLDBM::Type;
@@ -150,6 +152,7 @@ ok($object -> is_locked == 0, "Object is not locked");
 # clean up the schema - errors here are warnings, not failed tests
 
 eval {
+    no warnings;
     untie %o;
     undef $dbm;
 

@@ -40,7 +40,9 @@ if($@) {
 
 # see if we can do what we need to
 
-plan tests => $Gestinanna::POF::NumTests::API + 3;
+{ no warnings;
+plan tests => $Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT_OID_API + 3;
+}
 
 eval q"
 package My::MLDBM::Type;
@@ -48,6 +50,8 @@ package My::MLDBM::Type;
 use base qw(Gestinanna::POF::MLDBM);
 
 use public qw(this that foo bar);
+
+use constant object_ids => [qw(id)];
 ";
 
 $e = $@; diag($e) if $e;
@@ -94,11 +98,13 @@ $INC{'My/MLDBM/Type.pm'} = 1;
 
 run_api_tests($factory, 'object_1', 'this');
 
+run_ext_object_id_tests($factory, id => 'object_1', 'this');
 
 
 # clean up the schema - errors here are warnings, not failed tests
 
 eval {
+    no warnings;
     untie %o;
     undef $dbm;
 

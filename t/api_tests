@@ -1,11 +1,15 @@
-$Gestinanna::POF::NumTests::API = 18 + 2 + 5*8;
-$Gestinanna::POF::NumTests::SECURE_API = 14;
-$Gestinanna::POF::NumTests::SECURE_RO_API = 8;
+use strict;
+
+$Gestinanna::POF::NumTests::API = 21 + 2 + 5*8;
+$Gestinanna::POF::NumTests::EXT_OID_API = 8;
+$Gestinanna::POF::NumTests::SECURE_API = 15;
+$Gestinanna::POF::NumTests::SECURE_RO_API = 9;
 
 sub run_api_tests {
     my($factory, $object_id, $field) = @_;
 
     my $e; # for $@;
+    my $object;
 
     ## 1
 
@@ -16,6 +20,13 @@ sub run_api_tests {
     $e = $@; diag($e) if $e;
     ok($object && !$e, "Creating a new object");
 
+    my $id;
+    eval {
+        $id = $object -> object_id;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(defined($id) && !$e, "Object id is defined");
 
 
     ## 2
@@ -126,6 +137,13 @@ sub run_api_tests {
     ok($object && !$e, "Loading an old object");
 
 
+    eval {
+        $id = $object -> object_id;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(defined($id) && !$e, "Object id is defined");
+
     ## 13
 
     eval {
@@ -177,6 +195,13 @@ sub run_api_tests {
     $e = $@; diag($e) if $e;
     ok($object && !$e, "Loading deleted object");
 
+    eval {
+        $id = $object -> object_id;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(defined($id) && !$e, "Object id is defined");
+
     
     ## 18
 
@@ -202,7 +227,6 @@ sub run_api_tests {
     ok(!$e, "Created a bunch of objects");
 
     my $cursor;
-    my $id;
     my @list;
 
     my @searches = (
@@ -319,6 +343,72 @@ sub run_api_tests {
 
 }
 
+sub run_ext_object_id_tests {
+    my($factory, $id_field, $object_id, $field) = @_;
+
+    my $e; # for $@;
+
+    ## 1
+    my $object;
+
+    eval {
+        $object = $factory -> new(test => (object_id => "$id_field=$object_id"));
+    };
+
+    $e = $@; diag($e) if $e;
+    ok($object && !$e, "Creating a new object");
+
+    my $id;
+    eval {
+        $id = $object -> object_id;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(defined($id) && !$e, "Object id is defined");
+
+    ## 2
+
+    my $is_live;
+    eval {
+        $is_live = $object -> is_live;
+    };
+    
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Called is_live");
+
+    ## 3
+
+    is($is_live, 0, "Object is not live");
+
+    ## 4
+
+    my $ids;
+    eval {
+        $ids = $object -> object_ids;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Called object_ids");
+
+    ## 5
+
+    is_deeply($ids, [ $id_field ], "Right set of id fields");
+
+    ## 6
+
+    my $this;  
+    eval { 
+        $this = $object -> $id_field;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Retrieve object id field ($id_field)");
+
+    ## 7
+
+    is($this, $object_id, "Correct value for object id");
+}
+
 sub run_secure_api_tests {
     my($factory, $object_id, $field) = @_;
 
@@ -333,6 +423,14 @@ sub run_secure_api_tests {
       
     $e = $@; diag($e) if $e;
     ok($object && !$e, "Creating a new object");
+
+    my $id;
+    eval {
+        $id = $object -> object_id;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(defined($id) && !$e, "Object id is defined");
 
     ## 2-3 (temp?)
     ok($object -> isa('Gestinanna::POF::Secure'));
@@ -402,6 +500,14 @@ sub run_secure_ro_api_tests {
       
     $e = $@; diag($e) if $e;
     ok($object && !$e, "Creating a new object");
+
+    my $id;
+    eval {
+        $id = $object -> object_id;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(defined($id) && !$e, "Object id is defined");
 
     ## 2-3 (temp?)
     ok($object -> isa('Gestinanna::POF::Secure'));

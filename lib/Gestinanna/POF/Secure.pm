@@ -4,6 +4,8 @@ use base q(Class::Container);
 
 use vars qw($VERSION $REVISION);
 
+use strict;
+
 $VERSION = '0.02';
 
 $REVISION = 'something';
@@ -25,7 +27,7 @@ sub is_secured { return 1; }
 sub get_auth_id {
     my $self = shift;
 
-    return [ $self -> get_object_type, $self -> get_object_id ];
+    return [ $self -> object_type, $self -> object_id ];
 }
 
 sub get_actor {

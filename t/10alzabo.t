@@ -93,7 +93,9 @@ if($e = $@) {
 
 # see if we can do what we need to
 
-plan tests => ($Gestinanna::POF::NumTests::API + 3);
+{ no warnings;
+plan tests => ($Gestinanna::POF::NumTests::API + $Gestinanna::POF::NumTests::EXT_OID_API + 3);
+}
 
 eval q"
 package My::Alzabo::Type;
@@ -127,7 +129,7 @@ ok(!$e, "Registering factory type");
 my $factory;
 
 eval {
-    $factory = Gestinanna::POF -> new(_factory => ( schema => $schema ) );
+    $factory = Gestinanna::POF -> new(_factory => ( alzabo_schema => $schema ) );
 };
 
 $e = $@; diag($e) if $e;
@@ -137,6 +139,8 @@ ok(!$e, "Instantiating factory");
 $INC{'My/Alzabo/Type.pm'} = 1;
 
 run_api_tests($factory, 1, 'name');
+
+run_ext_object_id_tests($factory, id => 1, 'name');
 
 # clean up the schema - errors here are warnings, not failed tests
 

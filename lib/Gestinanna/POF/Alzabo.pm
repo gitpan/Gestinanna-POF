@@ -6,12 +6,12 @@ use strict;
 
 our $VERSION = '0.04';
 
-our $REVISION = substr q$Revision: 1.12 $, 10;
+our $REVISION = substr q$Revision: 1.14 $, 10;
 
 use private qw(_row _columns);
 
 __PACKAGE__->valid_params (
-    schema   => { isa => q(Alzabo::Runtime::Schema) },
+    alzabo_schema   => { isa => q(Alzabo::Runtime::Schema) },
 );
 
 sub escape_sql_meta {
@@ -26,6 +26,7 @@ sub escape_sql_meta {
 sub import {
     my $class = shift;
     my($table) = @_;
+    no strict 'refs';
 
     if(@_ == 1) {
         my $caller = caller;
@@ -37,13 +38,21 @@ sub import {
     }
 }
 
+sub object_ids {
+    my $self = shift;
+
+    return [ ] unless ref $self;
+
+    return [ map { $_ -> name } $self -> {alzabo_schema} -> table($self -> table) -> primary_key ];
+}
+
 sub is_public {
     my($self, $attr) = @_;
 
     # check to see if $attr is in the table we represent
-    return 1 if $self -> {schema} 
-             && $self -> {schema} -> table($self -> table) 
-             && $self -> {schema} -> table($self -> table) -> has_column($attr);
+    return 1 if $self -> {alzabo_schema} 
+             && $self -> {alzabo_schema} -> table($self -> table) 
+             && $self -> {alzabo_schema} -> table($self -> table) -> has_column($attr);
 
     return $self -> SUPER::is_public($attr);
 }
@@ -55,7 +64,6 @@ sub attributes {
 
     return keys %attrs;
 }
-    
 
 sub make_accessor {
     my($self, $field) = @_;
@@ -67,7 +75,7 @@ sub make_accessor {
     return sub {
         my($self, @v) = @_;
         if(@v) {
-            my $c = $self -> {schema} -> table($self -> table) -> column($field);
+            my $c = $self -> {alzabo_schema} -> table($self -> table) -> column($field);
             croak "Primary key " . $c->name . " in Alzabo table " . $self -> table . " is not modifiable" 
                 if $c -> is_primary_key;
             croak "Column " . $c->name . " cannot be null"
@@ -82,7 +90,7 @@ sub is_live {
 
     return exists $self->{_row} 
         && defined $self->{_row}
-        && $self->{_row}->is_live;
+        && $self->{_row}->is_live || 0;
 }
 
 sub delete {
@@ -108,29 +116,39 @@ sub save {
     my $class = ref $self || $self;
 
     # create a row in the table if needed
+    my @columns = map { $_ -> name } $self -> {alzabo_schema} -> table($self -> table) -> columns;
     unless(is_live($self)) {
         if($self -> {_row}) {
             my $values = {
                 map { $_ => $self -> {$_} }
                     grep { defined $self -> {$_} }
-                        map { $_ -> name } $self -> {schema} -> table($self -> table) -> columns
+                        @columns
             };
 
             $self -> {_row} -> make_live( values => $values );
 
-            return;
+            @$self{@columns} = $self -> {_row} -> select(@columns);
+            return 1;
         }
         else {
+            my $values = {
+                map { $_ => $self -> {$_} }
+                    grep { defined $self -> {$_} }
+                        map { $_ -> name } $self -> {alzabo_schema} -> table($self -> table) -> columns
+            };
+            #use Data::Dumper;
+            #main::diag(Data::Dumper -> Dump([$values]));
             eval {
                 $self -> {_row} =
-                    $self -> {schema} -> table($self -> table) -> insert(
+                    $self -> {alzabo_schema} -> table($self -> table) -> insert(
                         values => {
                             map { $_ => $self -> {$_} }
                                 grep { defined $self -> {$_} }
-                                     map { $_ -> name } $self -> {schema} -> table($self -> table) -> columns
+                                     @columns
                         }
                     );
-                 return;
+                 @$self{@columns} = $self -> {_row} -> select(@columns);
+                 return 1;
             };
         };
         carp "Problems: $@\n" if $@;
@@ -147,6 +165,7 @@ sub save {
                 grep { !$_ -> is_primary_key } 
                      $self -> {_row} -> table -> columns
     );
+    return 1;
 }
 
 sub load {
@@ -156,24 +175,24 @@ sub load {
     # if no object_id, create a new potential row, with a potential object_id :/
     # if object_id doesn't exist, load an empty potential row with that object_id
 
-    if(defined $self -> object_id) {
-        eval {
-            $self -> {_row} = $self -> {schema} -> table($self -> table) -> row_by_id(row_id => $self -> object_id);
-        };
-    }
+#    if(defined $self -> object_id) {
+#        eval {
+#            $self -> {_row} = $self -> {alzabo_schema} -> table($self -> table) -> row_by_id(row_id => $self -> object_id);
+#        };
+#    }
 
     unless($self -> {_row} && $self -> {_row} -> is_live) {
         eval {
-            if(defined $self -> object_id && $self -> {schema} -> table($self -> table) -> primary_key_size == 1) {
-                $self -> {_row} = $self -> {schema} -> table($self -> table) -> row_by_pk(
+            if(defined $self -> object_id && $self -> {alzabo_schema} -> table($self -> table) -> primary_key_size == 1) {
+                $self -> {_row} = $self -> {alzabo_schema} -> table($self -> table) -> row_by_pk(
                     pk => $self -> object_id
                 );
             }
             else {
                 my @where = map { [ $_, '=', $self -> {$_ -> name} ] }
                                 grep { defined $self -> { $_ -> name } }
-                                    ($self -> {schema} -> table($self -> table) -> primary_key);
-                $self -> {_row} = $self -> {schema} -> table($self -> table) -> one_row(
+                                    ($self -> {alzabo_schema} -> table($self -> table) -> primary_key);
+                $self -> {_row} = $self -> {alzabo_schema} -> table($self -> table) -> one_row(
                    where => \@where
                 ) if @where;
             }
@@ -181,22 +200,22 @@ sub load {
     }
 
     unless($self -> {_row} && $self -> {_row} -> is_live) {
-        if(defined $self -> object_id && $self -> {schema} -> table($self -> table) -> primary_key_size == 1) {
+        if(defined $self -> object_id && $self -> {alzabo_schema} -> table($self -> table) -> primary_key_size == 1) {
             eval {
-                $self -> {_row} = $self -> {schema} -> table($self -> table) -> potential_row(
+                $self -> {_row} = $self -> {alzabo_schema} -> table($self -> table) -> potential_row(
                     values => {
-                        $self -> {schema} -> table($self -> table) -> primary_key -> name => $self -> object_id
+                        $self -> {alzabo_schema} -> table($self -> table) -> primary_key -> name => $self -> object_id
                     },
                 );
             };
         }
         else {
             eval {
-                $self -> {_row} = $self -> {schema} -> table($self -> table) -> one_row(
+                $self -> {_row} = $self -> {alzabo_schema} -> table($self -> table) -> one_row(
                     where => [
                         map { [ $_, '=', $self -> {$_ -> name} ] }
                             grep { defined $self -> { $_ -> name } }
-                                $self -> {schema} -> table($self -> table) -> columns
+                                $self -> {alzabo_schema} -> table($self -> table) -> columns
                     ],
                 );
             };
@@ -205,7 +224,7 @@ sub load {
 
     unless($self -> {_row}) {
         eval {
-            my $table = $self -> {schema} -> table($self -> table);
+            my $table = $self -> {alzabo_schema} -> table($self -> table);
             $self -> {_row} = $table -> potential_row(
                 values => {
                     map { $_ => $self -> {$_} }
@@ -231,20 +250,22 @@ sub find {
     my $limit = delete $params{limit};
 
     use Data::Dumper;
+    #warn "$self -> find(...): ", Data::Dumper -> Dump([$search]);
+
     croak "No search criteria are appropriate" unless UNIVERSAL::isa($search, 'ARRAY');
 
     unless(ref $self) {
         $self = bless { %params } => $self;
     }
 
-    my $table = $self -> {_factory} -> {schema} -> table($self -> table);
+    my $table = $self -> {_factory} -> {alzabo_schema} -> table($self -> table);
     my $where = $self -> _find2where($search, $table, 0);
 
     croak "No search criteria are appropriate" unless @{$where} > 0;
 
     #main::diag("Where: " . Data::Dumper -> Dump([$self -> _find2where($search, $table, 0, 1)]));
 
-    my $cursor = $self -> {_factory} -> {schema} -> table($self -> table) -> rows_where(
+    my $cursor = $self -> {_factory} -> {alzabo_schema} -> table($self -> table) -> rows_where(
         where => $where,
         order_by => $table -> primary_key,
     );
@@ -346,12 +367,16 @@ sub _find2where {
                     /^<$/ && do { push @$where, '>=' } && next;
                     /^>$/ && do { push @$where, '<=' } && next;
                     /^EXISTS$/ && do { push @$where, '=', undef; } && next;
+                    /^CONTAINS$/ && do { push @$where, 'NOT LIKE' } && next;
                     push @$where, "NOT " . $search->[1];  # default
                 }
             }
             else {
                 if($search->[1] eq 'EXISTS') {
                     push @$where, '!=', undef;
+                }
+                elsif($search -> [1] eq 'CONTAINS') {
+                    push @$where, 'LIKE';
                 }
                 else {
                     push @$where, $search -> [1];
@@ -369,8 +394,14 @@ sub _find2where {
                         push @$where, "column:" . $$bit;
                     }
                     else {
+                        #warn "pushing column $$bit\n";
                         push @$where, $table -> column($$bit);
                     }
+                }
+                elsif( $search -> [1] eq 'CONTAINS' ) {
+                    $bit =~ s{\\}{\\\\}g;
+                    $bit =~ s{%}{\\%}g;
+                    push @$where, "%$bit%";
                 }
                 else {
                     push @$where, $bit;

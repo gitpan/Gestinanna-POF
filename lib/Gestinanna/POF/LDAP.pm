@@ -12,7 +12,7 @@ use Net::LDAP::Entry;
 
 our $VERSION = '0.04';
 
-our $REVISION = (split /\s+/, q$Revision: 1.9 $, 3)[1];
+our $REVISION = (split /\s+/, q$Revision: 1.11 $, 3)[1];
 
 #use fields qw(_entry _is_live ldap);
 use public qw(ldap ldap_schema dn);
@@ -261,6 +261,13 @@ our %SYNTAX = (
     },
 );
 
+# backwards compatible definition
+sub object_ids {
+    my $class = shift;
+
+    return [ $class -> id_field ];
+}
+
 sub id_field {
     my $class = shift;
 
@@ -494,78 +501,24 @@ sub attributes {
                  };
 }
 
-sub generate_ldif {
-    my $self = shift;
-
-    my @required = $self -> _required_attributes;
-
-    my @missing = grep { !defined($self -> {$_}) } @required;
-    croak "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
-        if @missing;
-
-    # original is in $self -> {_entry}
-
-}
-
-sub generate_reverse_ldif {
-    my $self = shift;
-
-    my @required = $self -> _required_attributes;
-
-    my @missing = grep { !defined($self -> {$_}) } @required;
-    croak "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
-        if @missing;
-
-    # original is in $self -> {_entry}
-}
-
-sub ldap_modify {
-    my $self = shift;
-
-    return unless defined $self -> {_entry};
-
-    #my $entry = $self -> {_entry};
-
-    my $id_field = $self -> id_field;
-
-    #main::diag("Updating entry");
-#    $entry->replace(map { defined($self -> {$_}) ? ($_ => $self -> {$_}) : ( ) } grep { $_ ne $id_field } $self -> _allowed_attributes);
-#    $entry->delete( map { (exists($self -> {$_}) && !defined($self -> {$_})) ? ( $_ => undef ) : ( ) } grep { $_ ne $id_field } $self -> _allowed_attributes);
-
-    my $result = $self -> {_entry} -> update( $self -> {ldap} );
-
-    $result->code && croak "failed to update entry: ", $result->error;
-}
-
-sub ldap_add {
-    my $self = shift;
-
-    return if defined $self -> {_entry};
-
-    my $entry = Net::LDAP::Entry -> new;
-    $entry -> changetype( 'add' );
-    $entry -> dn($self -> dn);
-    $entry->add(map { defined($self -> {$_}) ? ($_ => $self -> {$_}) : ( ) } $self -> _allowed_attributes);
-    $entry -> replace( $self -> id_field => $self -> {$self -> id_field} );
-
-    #my $result = $self -> {ldap} -> add( $entry );
-    my $result = $entry -> update( $self -> {ldap} );
-
-    $result->code && croak "failed to add entry: ", $result->error;
-
-#    $self -> {_is_live} = 1;
-#    $self -> {_entry} = $entry;
-    $self -> load;
-}
-
 sub dn {
     my $self = shift;
 
-    return $self -> id_field . "=" . $self -> object_id . ", " . $self -> base_dn;
+    return $self -> {_entry} -> dn 
+        if $self -> {_entry};
+
+    my $attrs = $self -> object_ids;
+
+    my %attrs = map { defined($self -> {$_}) ? ($_ => $self -> {$_}) : () } @$attrs;
+
+    foreach my $attr (keys %attrs) {
+        $attrs{$attr} =~ s{([\\,=()])}{\\$1};
+    }
+
+    #return $self -> id_field . "=" . $self -> object_id . ", " . $self -> base_dn;
+    return join(",", map { "$_=$attrs{$_}" } keys %attrs) . "," . $self -> base_dn;
 }
 
-#sub is_live { return !$self->{_deleted} && (defined($_[0] -> {_entry}) || 0); }
-#sub is_live { return defined($_[0] -> {_entry}) || 0; }
 sub is_live { return( (defined($_[0] -> {_entry}) && $_[0] -> {_entry} -> changetype eq 'modify') || 0); }
 
 sub is_public {
@@ -596,15 +549,6 @@ sub save {
     my $result = $self -> {_entry} -> update( $self -> {ldap} );
 
     $result->code && croak "failed to $changetype entry: ", $result->error;
-
-    #$self -> load if $changetype eq 'add';
-    #if(defined $self -> {_entry}) {
-    #    $self -> ldap_modify;
-    #}
-    #else {
-    #    $self -> ldap_add;
-    #    #$self -> {_is_live} = 1;
-    #}
 }
 
 sub load {
@@ -617,9 +561,22 @@ sub load {
 
     #main::diag("Searching for " . $self -> dn);
 
+    my $attrs = $self -> object_ids;
+    my $search = [ 'AND' ];
+
+    foreach my $attr (grep {defined $self -> {$_}} @{$self -> object_ids || []}) 
+    {
+        push @$search, [ $attr, '=', $self -> {$attr} ];
+    }
+
+    my $where = $self -> _find2where($search);
+
+    #main::diag("Searching for $where");
+
     my $mesg = $self -> {ldap} -> search(
         base => $self -> base_dn,
-        filter => "(" . $self -> id_field . "=" . $self -> object_id . ")",
+        #filter => "(" . $self -> id_field . "=" . $self -> object_id . ")",
+        filter => $where,
         attrs => [ '*', '+' ],
     );
 
@@ -628,6 +585,7 @@ sub load {
     #main::diag($mesg -> count . " entries found");
 
     die "Too many results -- expected 0 or 1" if $mesg->count > 1;
+    
 
     if($mesg -> count == 1) {
         my $entry = $mesg -> entry(0);
@@ -646,11 +604,16 @@ sub load {
         $entry -> changetype( 'add' );
         $entry -> dn($self -> dn);
         $entry -> add(objectclass => $self -> default_objectclass);
-        $entry -> add($self -> id_field => $self -> object_id);
+        #$entry -> add($self -> id_field => $self -> object_id);
+        foreach my $attr (@{$attrs||[]}) {
+            next unless defined $self -> {$attr};
+            #main::diag("Adding $attr => $$self{$attr} to object");
+            $entry -> add($attr, $self -> {$attr});
+        }
 
         $self -> {_entry} = $entry;
 
-        $self -> {$self -> id_field} = $self -> object_id;
+        #$self -> {$self -> id_field} = $self -> object_id;
         $self -> {objectclass} = $self -> default_objectclass;
     }
 }
@@ -724,7 +687,7 @@ sub _find2where {
     my $self = shift;
     my $search = shift;
 
-    my $where;
+    my $where = '';
     my $n = $#$search;
 
     use Data::Dumper;
@@ -767,10 +730,7 @@ sub _find2where {
         };
 
         # plain clause
-        if(@$search > 3 || @$search < 2) {
-            return '';
-        }
-        elsif(@$search == 2) {
+        if(@$search == 2) {
             return '' unless $search->[1] eq 'EXISTS';
             my $attr = $search -> [0];
             if(($self -> _attribute_exists($attr) || $attr eq $self -> id_field)
@@ -782,7 +742,7 @@ sub _find2where {
             }
             return '';
         }
-        else {
+        elsif(@$search == 3) {
             my($attr, $op, $test) = @$search;
             #main::diag("Test: $attr | $op | $test");
             my($pre, $post);
@@ -803,10 +763,25 @@ sub _find2where {
                 $test =~ s{(\\*)([=()])}{length($1) % 2 == 0 ? print "$1\\$2" : print "$1$2"}ge;
                 #$test =~ s{[=()]}{\\$1}g;
                 
-                $where = "$pre($attr$op$test)$post";
+                { no warnings; $where = "$pre($attr$op$test)$post"; }
             }
-            else {
-                $where = ''; # unsupported operation, attribute, or lack of search authorization
+        }
+        elsif(@$search == 4) {
+            my($attr, $op, @args) = @$search;
+            $attr =~ s{(\\*)([=()])}{length($1) % 2 == 0 ? print "$1\\$2" : print "$1$2"}ge;
+            s{(\\*)([=()])}{length($1) % 2 == 0 ? print "$1\\$2" : print "$1$2"}ge for @args;
+
+            if($op =~ m{^(IN)?BETWEEN$}
+               && ($self -> _attribute_exists($attr)  || $attr eq $self -> id_field)
+               && $self -> has_access($attr, [ 'search' ]))
+            {
+                # inclusive or exclusive?
+                if($op eq 'BETWEEN') {
+                    $where = "(&($attr>$args[0])($attr<$args[1]))";
+                }
+                else {
+                    $where = "(&($attr>=$args[0])($attr<=$args[1]))";
+                }
             }
         }
     }

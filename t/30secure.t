@@ -95,12 +95,15 @@ if($e = $@) {
 }
 
 # see if we can do what we need to
+{ no warnings;
 
 plan tests => (  $Gestinanna::POF::NumTests::API 
                + $Gestinanna::POF::NumTests::SECURE_API 
                + $Gestinanna::POF::NumTests::SECURE_RO_API 
                + 8 + 1
               );
+
+}
 
 my $object_class = 'My::Secure::Type';
 
@@ -169,7 +172,7 @@ my $factory;
 
 eval {
     $factory = Gestinanna::POF -> new(_factory => ( 
-        schema => $schema, 
+        alzabo_schema => $schema, 
         actor => Gestinanna::POF::Base -> new(
             _factory => 'Gestinanna::POF'
         ) 
@@ -230,9 +233,9 @@ sub has_access {
     my($self, $attribute, $access) = @_;
 
     # do check - return true or false
-    $main::has_actor = defined $self -> {actor};
-    $main::has_access_attribute = $attribute;
-    $main::has_access_access = $access;
+    $main::has_actor = $main::has_actor = defined $self -> {actor};
+    $main::has_access_attribute = $main::has_access_attribute = $attribute;
+    $main::has_access_access = $main::has_access_access = $access;
 
     return 1;
 }

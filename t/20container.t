@@ -125,7 +125,9 @@ if($@) {
 # see if we can do what we need to
 
 
-plan tests => 3*$Gestinanna::POF::NumTests::API + 3;
+{ no warnings;
+plan tests => 3*$Gestinanna::POF::NumTests::API + 3*$Gestinanna::POF::NumTests::EXT_OID_API + 3;
+}
 
 eval "
 ############
@@ -136,6 +138,7 @@ use base qw(Gestinanna::POF::MLDBM);
 
 use public qw(this that foo bar);
 
+use constant object_ids => [qw(id)];
 
 ######
 
@@ -183,7 +186,7 @@ ok(!$e, "Registering factory type");
 my $factory;
 
 eval {
-    $factory = Gestinanna::POF -> new(_factory => ( schema => $schema, mldbm => $dbm ) );
+    $factory = Gestinanna::POF -> new(_factory => ( alzabo_schema => $schema, mldbm => $dbm ) );
 };
 
 $e = $@; diag($e) if $e;
@@ -197,6 +200,12 @@ run_api_tests($factory, 1, 'this');  # test MLDBM object
 
 run_api_tests($factory, 1, 'bar');   # test both
 
+run_ext_object_id_tests($factory, id => 1, 'name');  # test Alzabo object
+
+run_ext_object_id_tests($factory, id => 1, 'this');  # test MLDBM object
+
+run_ext_object_id_tests($factory, id => 1, 'bar');   # test both
+
 # clean up the schema - errors here are warnings, not failed tests
 
 
@@ -207,6 +216,7 @@ eval {
 $e = $@; diag($e) if $e;
 
 eval {
+    no warnings;
     untie %o;
     undef $dbm;
 
