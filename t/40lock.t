@@ -52,8 +52,22 @@ if($@) {
 
 # see if we can do what we need to
 
-plan tests => $Gestinanna::POF::NumTests::API + 2 + 9;
+plan tests => $Gestinanna::POF::NumTests::API + 3 + 9;
 
+eval "
+package My::MLDBM::Type;
+
+use base qw(
+    My::Locker
+    Gestinanna::POF::MLDBM
+);
+
+use public qw(this that foo bar);
+";
+
+$e = $@; diag($e) if $e;
+
+ok(!$e, "Defined test data type");
 
 ###
 ### 1
@@ -146,13 +160,3 @@ $e = $@; diag($e) if $e;
 
 exit 0;
 
-package My::MLDBM::Type;
-
-use base qw(
-    My::Locker
-    Gestinanna::POF::MLDBM
-);
-
-use public qw(this that foo bar);
-
-1;

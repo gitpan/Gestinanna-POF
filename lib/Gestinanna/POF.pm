@@ -5,9 +5,9 @@ use base (Class::Factory);
 use Gestinanna::POF::Iterator;
 use Carp;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
-our $REVISION = substr(q$Revision: 1.9 $, 10);
+our $REVISION = substr(q$Revision: 1.10 $, 10);
 
 sub new {
     my $self = shift;
@@ -170,7 +170,6 @@ classes and object types.
 =item L<Gestinanna::POF::LDAP|Gestinanna::POF::LDAP>
 
 This class allows objects to be defined using entries from an LDAP directory.
-This class is still alpha code at best.
 
 =item L<Gestinanna::POF::MLDBM|Gestinanna::POF::MLDBM>
 

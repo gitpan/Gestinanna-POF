@@ -1,4 +1,4 @@
-$Gestinanna::POF::NumTests::API = 18 + 2 + 5*6;
+$Gestinanna::POF::NumTests::API = 18 + 2 + 5*8;
 $Gestinanna::POF::NumTests::SECURE_API = 14;
 $Gestinanna::POF::NumTests::SECURE_RO_API = 8;
 
@@ -265,6 +265,18 @@ sub run_api_tests {
              limit => [ 5, 3 ],
           },
           [ qw(6 7 8 9 10) ],
+       ],
+       [
+          {
+              where => [ $field, 'EXISTS' ],
+          },
+          [ 1 .. 14 ],
+       ],
+       [
+          {
+              where => [ NOT => $field, 'EXISTS' ],
+          },
+          [  ],
        ],
     );
 #=cut

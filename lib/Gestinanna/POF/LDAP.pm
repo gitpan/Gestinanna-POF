@@ -4,12 +4,15 @@ use base qw(Gestinanna::POF::Base);
 
 use Carp;
 
+use strict;
+
 use Net::LDAP::Constant qw(LDAP_CONTROL_SORTRESULT);
 use Net::LDAP::Control::Sort;
+use Net::LDAP::Entry;
 
-our $VERSION = '0.02';
+our $VERSION = '0.04';
 
-our $REVISION = (split /\s+/, q$Revision: 1.7 $, 3)[1];
+our $REVISION = (split /\s+/, q$Revision: 1.9 $, 3)[1];
 
 #use fields qw(_entry _is_live ldap);
 use public qw(ldap ldap_schema dn);
@@ -50,7 +53,7 @@ our %SYNTAX = (
     },
     '1.3.6.1.4.1.1466.115.121.1.7' => {
         desc => 'Boolean',
-        regex => qw{^(TRUE|FALSE)$},
+        regex => qr{^(TRUE|FALSE)$},
     },
     '1.3.6.1.4.1.1466.115.121.1.8' => {
         desc => 'Certificate',
@@ -274,11 +277,19 @@ sub base_dn {
     carp "No base_dn defined for LDAP class $class\n";
 }
 
+sub default_objectclass {
+    my $class = shift;
+
+    $class = ref $class || $class;
+
+    carp "No default_objectclass for LDAP class $class\n";
+}
+
 sub new {
     my($self, %params) = @_;
 
-    $params -> {ldap_schema} = $params -> {ldap} -> schema 
-        unless defined $params -> {ldap_schema} || !defined $params -> {ldap};
+    $params{ldap_schema} = $params{ldap} -> schema 
+        unless defined $params{ldap_schema} || !defined $params{ldap};
 
     $self = $self -> SUPER::new(%params);
 
@@ -287,20 +298,30 @@ sub new {
 
 # 'no-user-modification' => 1,  ==> implies !write for anyone
 # 'single-value' => 1  ==> implies not multi-valued
+#sub get {
+#    my($self, @attrs) = @_;
+#    #my @badattrs = grep { !$self -> is_public($_) } @attrs;
+#
+#    #my %v = map { $_ => $self -> SUPER::get($_) } @attrs;
+#
+#    #delete @v{@badattrs};
+#
+#    return $self -> SUPER::get(@attrs);
+#    return @v{@attrs};
+#}
+
 sub get {
-    my($self, @attrs) = @_;
-    #my @badattrs = grep { !$self -> is_public($_) } @attrs;
+    my($self) = shift;
 
-    #my %v = map { $_ => $self -> SUPER::get($_) } @attrs;
-
-    #delete @v{@badattrs};
+    my @attrs = map { lc $_ } @_;
 
     return $self -> SUPER::get(@attrs);
-    return @v{@attrs};
 }
 
 sub set {
     my($self, $attr, @v) = @_;
+
+    $attr = lc $attr;
 
     croak "$attr is not a public attribute" unless defined $attr && $self -> is_public($attr);
 
@@ -327,19 +348,42 @@ sub set {
             if @badv;
     }
 
-    if(exists $SYNTAX{$a -> {syntax}} && exists $SYNTAX{$a -> {syntax}}{regex}) {
-        my @badv = grep { $_ !~ $SYNTAX{$a -> {syntax}}{regex} } @v;
+    if(exists $SYNTAX{$a -> {syntax}}) {
+        my @badv;
+        if(exists $SYNTAX{$a -> {syntax}}{regex}) {
+            @badv = grep { $_ !~ $SYNTAX{$a -> {syntax}}{regex} } @v;
+        } elsif(exists $SYNTAX{$a -> {syntax}}{code}) {
+            @badv = grep { !$SYNTAX{$a -> {syntax}}{code} -> ($_) } @v;
+        }
+
         croak "Attribute values for $attr do not match `$SYNTAX{$a -> {syntax}}{desc}': ", join("; ", @badv)
             if @badv;
     }
 
     if($attr eq 'objectclass' && $self -> {ldap_schema}) {
         # make sure all the objectclasses are valid
-        my %obclasses = map { lc $_ => $_ } $self -> {ldap_schema} -> objectclasses;
-        my @badocs = grep { !$obclasses{$_} } @v;
+        my %obclasses = map { lc($_ -> {name}) => $_->{name} } $self -> {ldap_schema} -> all_objectclasses;
+        my @badocs = grep { !exists $obclasses{lc $_} } @v;
+        @v = grep { exists $obclasses{lc $_} } @v;
+        return unless @v;
     }
 
-    return $self -> SUPER::set($attr, @v);
+    my $ret = $self -> SUPER::set($attr, @v);
+    if($ret && $self -> {_entry}) {
+        #main::diag("Setting $attr");
+        if(@v) {
+            if($self -> {_entry} -> exists($attr)) {
+                $self -> {_entry} -> replace($attr => \@v);
+            }
+            else {
+                $self -> {_entry} -> add($attr => \@v);
+            }
+        }
+        elsif($self -> {_entry} -> exists($attr)) {
+            $self -> {_entry} -> delete($attr => [ ]);
+        }
+    }
+    return $ret;
 }
 
 
@@ -367,17 +411,22 @@ sub _get_attribute_info {
 sub _attribute_allowed {
     my($self, $attribute) = @_;
 
-    my @ocs = @{$self -> {objectclass}||[]};
+    return 1 if lc $attribute eq 'objectclass';
+
+    #my @ocs = @{ref $self -> {objectclass} ||[]};
+    my @ocs = $self -> objectclass;
     my $oc;
     my %seen_ocs;
     while($oc = shift @ocs) {
         next if $seen_ocs{$oc};
         $seen_ocs{$oc}++;
+        #main::diag("Looking at objectclass `$oc'");
         my $oci = $self -> {ldap_schema} -> objectclass($oc);
         next unless $oci;
         push @ocs, @{$oci -> {sup} || []};
         my %atts;
         @atts{map { lc $_ } (@{$oci -> {must} || []}, @{$oci -> {may} || []})} = ( );
+        #main::diag("Attributes: " . join(", ", keys %atts));
         return 1 if exists $atts{lc $attribute};
     }
     return 0;
@@ -394,10 +443,11 @@ sub _attribute_exists {
 sub _required_attributes {
     my($self) = @_;
 
-    my @ocs = @{$self -> {objectclass}||[]};
+    #my @ocs = @{$self -> {objectclass}||[]};
+    my @ocs = $self -> objectclass;
     my $oc;
     my %seen_ocs;
-    my %attrs;
+    my %attrs = (objectclass => undef);
     while($oc = shift @ocs) {
         next if $seen_ocs{$oc};
         $seen_ocs{$oc}++;
@@ -412,17 +462,20 @@ sub _required_attributes {
 sub _allowed_attributes {
         my($self) = @_;
 
-    my @ocs = @{$self -> {objectclass}||[]};
+    #my @ocs = @{$self -> {objectclass}||[]};
+    my @ocs = $self -> objectclass;
     my $oc;
     my %seen_ocs;
-    my %attrs;
+    my %attrs = (objectclass => undef);
     while($oc = shift @ocs) {
         next if $seen_ocs{$oc};
+        #main::diag("Looking at objectclass `$oc'");
         $seen_ocs{$oc}++;
         my $oci = $self -> {ldap_schema} -> objectclass($oc);
         next unless $oci;
         push @ocs, @{$oci -> {sup} || []};
         @attrs{map { lc $_ } (@{$oci -> {must} || []}, @{$oci -> {may} || []})} = ( );
+        #main::diag("Attributes: " . join(", ", keys %attrs));
     }
     return keys %attrs;
 }
@@ -447,7 +500,7 @@ sub generate_ldif {
     my @required = $self -> _required_attributes;
 
     my @missing = grep { !defined($self -> {$_}) } @required;
-    carp "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
+    croak "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
         if @missing;
 
     # original is in $self -> {_entry}
@@ -460,31 +513,49 @@ sub generate_reverse_ldif {
     my @required = $self -> _required_attributes;
 
     my @missing = grep { !defined($self -> {$_}) } @required;
-    carp "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
+    croak "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
         if @missing;
 
     # original is in $self -> {_entry}
 }
 
 sub ldap_modify {
-    return if $self -> {_deleted} || !defined $self -> {_entry};
+    my $self = shift;
 
-    
+    return unless defined $self -> {_entry};
+
+    #my $entry = $self -> {_entry};
+
+    my $id_field = $self -> id_field;
+
+    #main::diag("Updating entry");
+#    $entry->replace(map { defined($self -> {$_}) ? ($_ => $self -> {$_}) : ( ) } grep { $_ ne $id_field } $self -> _allowed_attributes);
+#    $entry->delete( map { (exists($self -> {$_}) && !defined($self -> {$_})) ? ( $_ => undef ) : ( ) } grep { $_ ne $id_field } $self -> _allowed_attributes);
+
+    my $result = $self -> {_entry} -> update( $self -> {ldap} );
+
+    $result->code && croak "failed to update entry: ", $result->error;
 }
 
 sub ldap_add {
     my $self = shift;
 
-    return unless $self -> {_deleted} || !defined $self -> {_entry};
+    return if defined $self -> {_entry};
 
-    my $result = $self -> {ldap} -> add(
-        $self -> dn,
-        attrs => [
-            map { $_ => $self -> {$_} } $self -> _allowed_attributes
-        ],
-    );
+    my $entry = Net::LDAP::Entry -> new;
+    $entry -> changetype( 'add' );
+    $entry -> dn($self -> dn);
+    $entry->add(map { defined($self -> {$_}) ? ($_ => $self -> {$_}) : ( ) } $self -> _allowed_attributes);
+    $entry -> replace( $self -> id_field => $self -> {$self -> id_field} );
 
-    $result->code && carp "failed to add entry: ", $result->error;
+    #my $result = $self -> {ldap} -> add( $entry );
+    my $result = $entry -> update( $self -> {ldap} );
+
+    $result->code && croak "failed to add entry: ", $result->error;
+
+#    $self -> {_is_live} = 1;
+#    $self -> {_entry} = $entry;
+    $self -> load;
 }
 
 sub dn {
@@ -493,12 +564,16 @@ sub dn {
     return $self -> id_field . "=" . $self -> object_id . ", " . $self -> base_dn;
 }
 
-sub is_live { return $_[0] -> {_is_live}; }
+#sub is_live { return !$self->{_deleted} && (defined($_[0] -> {_entry}) || 0); }
+#sub is_live { return defined($_[0] -> {_entry}) || 0; }
+sub is_live { return( (defined($_[0] -> {_entry}) && $_[0] -> {_entry} -> changetype eq 'modify') || 0); }
 
 sub is_public {
     my($self, $attr) = @_;
 
     return 1 if $self -> SUPER::is_public($attr);
+
+    #main::diag("$self -> is_public($attr) : " . $self -> _attribute_allowed($attr));
 
     return $self -> _attribute_allowed($attr);
 
@@ -512,18 +587,24 @@ sub save {
     my @required = $self -> _required_attributes;
 
     my @missing = grep { !defined($self -> {$_}) } @required;
-    carp "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
+    croak "Required attribute", (@missing > 1 ? "s " : " "), join(", ", @missing), " not defined"
         if @missing;
 
     # use ldap protocol for saves and suggest something better in 
     # the documentation
-    if($self -> {_is_live} && defined $self -> {_entry}) {
-        $self -> ldap_modify;
-    }
-    else {
-        $self -> ldap_add;
-        $self -> {_is_live} = 1;
-    }
+    my $changetype = $self -> {_entry} -> changetype;
+    my $result = $self -> {_entry} -> update( $self -> {ldap} );
+
+    $result->code && croak "failed to $changetype entry: ", $result->error;
+
+    #$self -> load if $changetype eq 'add';
+    #if(defined $self -> {_entry}) {
+    #    $self -> ldap_modify;
+    #}
+    #else {
+    #    $self -> ldap_add;
+    #    #$self -> {_is_live} = 1;
+    #}
 }
 
 sub load {
@@ -532,33 +613,45 @@ sub load {
     # load into $self -> {_entry};
     # copy attributes into $self
 
+    return unless $self -> {ldap};
+
+    #main::diag("Searching for " . $self -> dn);
+
     my $mesg = $self -> {ldap} -> search(
         base => $self -> base_dn,
         filter => "(" . $self -> id_field . "=" . $self -> object_id . ")",
         attrs => [ '*', '+' ],
     );
 
-    $mesg -> code && carp $mesg -> error;
+    croak $mesg -> error if $mesg -> code && $mesg -> error !~ m{No such object};
+
+    #main::diag($mesg -> count . " entries found");
 
     die "Too many results -- expected 0 or 1" if $mesg->count > 1;
 
-    return unless $mesg -> count;
+    if($mesg -> count == 1) {
+        my $entry = $mesg -> entry(0);
 
-    my $entry = $mesg -> entry(0);
-
-    if(defined $entry) {
         $self -> {_entry} = $entry;
+        $self -> {_entry} -> changetype( 'modify' );
 
         foreach my $attr ($entry -> attributes) {
-            my @v = $entry -> get_value($attr);
+            my @v = grep { defined } $entry -> get_value($attr);
+            #main::diag("  fetching attribute $attr - has ". scalar(@v) . " values");
             $self->{lc $attr} = @v > 1 ? [ @v ] : $v[0];
         }
-        $self -> {_is_live} = 1;
     }
     else {
-        $self -> {$self -> id_field} = $self -> object_id;
+        my $entry = Net::LDAP::Entry -> new;
+        $entry -> changetype( 'add' );
+        $entry -> dn($self -> dn);
+        $entry -> add(objectclass => $self -> default_objectclass);
+        $entry -> add($self -> id_field => $self -> object_id);
 
-        $self -> {_is_live} = 0;
+        $self -> {_entry} = $entry;
+
+        $self -> {$self -> id_field} = $self -> object_id;
+        $self -> {objectclass} = $self -> default_objectclass;
     }
 }
 
@@ -590,10 +683,13 @@ sub find {
 
     my $cursor = $self -> {ldap} -> search( 
         base => $self -> base_dn,
+        scope => 'one',
         filter => $where,
         attrs => [ $id_field ],
         #control => [ $sort ] 
     );
+
+    $cursor -> code && croak "Failed search: (" . $cursor -> code . ") " . $cursor -> error;
 
     return Gestinanna::POF::Iterator -> new(
         factory => $self -> {_factory},
@@ -601,7 +697,10 @@ sub find {
         limit => $limit,
         generator => sub {
             my $entry = $cursor -> shift_entry;
+            #main::diag("Entry: $entry");
             if($entry) {
+                #main::diag("\$entry -> get_value($id_field): " . $entry -> get_value($id_field));
+                #main::diag("entry dn: " . $entry -> dn);
                 return $entry -> get_value($id_field);
             }
             return;
@@ -668,7 +767,19 @@ sub _find2where {
         };
 
         # plain clause
-        if(@$search > 3) {
+        if(@$search > 3 || @$search < 2) {
+            return '';
+        }
+        elsif(@$search == 2) {
+            return '' unless $search->[1] eq 'EXISTS';
+            my $attr = $search -> [0];
+            if(($self -> _attribute_exists($attr) || $attr eq $self -> id_field)
+               && $self -> has_access($attr, [ 'search' ]))
+            {
+                #$attr =~ s{[\\=()]}{\\$1}g;
+                $attr =~ s{(\\*)([=()])}{length($1) % 2 == 0 ? print "$1\\$2" : print "$1$2"}ge;
+                return "($attr=*)";
+            }
             return '';
         }
         else {
@@ -687,8 +798,10 @@ sub _find2where {
                         $op = $ops{$op};
                     }
                 }
-                $attr =~ s{[=()]}{\\$1}g;
-                $test =~ s{[=()]}{\\$1}g;
+                #$attr =~ s{[=()]}{\\$1}g;
+                $attr =~ s{(\\*)([=()])}{length($1) % 2 == 0 ? print "$1\\$2" : print "$1$2"}ge;
+                $test =~ s{(\\*)([=()])}{length($1) % 2 == 0 ? print "$1\\$2" : print "$1$2"}ge;
+                #$test =~ s{[=()]}{\\$1}g;
                 
                 $where = "$pre($attr$op$test)$post";
             }
@@ -708,30 +821,14 @@ sub delete {
 
     return unless defined $self -> {_entry};
 
-    $self -> {ldap} -> delete($self -> {_entry});
-    $self -> {_is_live} = 0;
+    my $mesg = $self -> {ldap} -> delete($self -> {_entry});
 
-    #delete @$self{$self->{_entry}->attributes};
+    $mesg -> code && croak "(" . $mesg -> code . ") " . $mesg -> error;
+
+    delete @$self{$self->{_entry}->attributes};
+
+    delete $self -> {_entry};
 }
-
-#sub undelete {
-#    my $self = shift;
-#
-#    return unless defined $self -> {ldap};
-#
-#    return unless defined $self -> {_entry};
-#
-#    return if $self -> {_is_live};
-#
-#    $self -> {ldap} -> add($self -> {_entry});
-#    $self -> {_is_live} = 1;
-#
-#    my $entry = ($self -> {_entry});
-#    #foreach my $attr ($entry -> attributes) {
-#    #    my @v = $entry -> get_value($attr);
-#    #    $self->{$attr} = @v > 1 ? [ @v ] : $v[0];
-#    #}
-#}
 
 1;
 
@@ -747,18 +844,131 @@ Gestinanna::POF::LDAP - LDAP interface for persistant objects
 
  use base qw(Gestinanna::POF::LDAP);
 
- use constant base_dn => 'ou=branch, dc=some, dc=com';
+ use constant base_dn => 'ou=branch, dc=some, dc=tld';
  use constant id_field => 'uid';
-
- # override set, get, save methods here
+ use constant default_objectclass => [qw(list of objectClasses)];
 
 =head1 DESCRIPTION
 
+Gestinanna::POF::LDAP uses L<Net::LDAP|Net::LDAP> to provide access 
+via LDAP to objects stored in a directory.  This module does make 
+certain assumptions about the structure of the directory.  If more 
+sophisticated access is required, you may need to go directly to the 
+L<Net::LDAP|Net::LDAP> module instead of using this one.
 
+=head1 ATTRIBUTES
+
+This module tries to use as many hints as possible from the LDAP 
+schema.  Such hints override any security allowance (e.g., if security 
+says an attribute is modifiable but the LDAP schema says it isn't, 
+then modifications are not allowed).
+
+The following are some notes on how attributes are handled.
+
+=over 4
+
+=item *
+C<id_field>
+
+The C<id_field> (see below) is considered the primary key of the LDAP 
+branch.  As such, it may not be modified.
+
+=item *
+objectclass
+
+C<ObjectClass> always is a valid attribute.
+
+=item *
+multiplicity
+
+If an attribute is marked as single valued in the LDAP schema, then 
+only one value may be set.  Otherwise, multiple values are allowed, 
+though duplicate values will be ignored.
+
+=item *
+removing an attribute
+
+To remove an attribute, assign it an C<undef> value.
+
+=item *
+available attributes
+
+The available attributes are determined by the C<objectclass>.  Any 
+attributes the are allowed for an objectclass are allowed for the 
+object.  Any attributes which are required by the objectclass may not 
+be deleted or assigned an C<undef> value.
+
+=item *
+case
+
+Attribute names are case-insensitive though lower-case is preferred.
+
+=item *
+attribute syntax
+
+The global C<%Gestinanna::POF::LDAP::SYNTAX> holds regular expressions 
+or code references that may be used to check the validity of attribute 
+values.  This global hash is keyed by the OID of the syntax.  For example:
+
+    $Gestinanna::POF::LDAP::SYNTAX{'1.3.6.1.4.1.1466.115.121.1.27'} = {   
+        desc => 'INTEGER',
+        regex => qr{^\d+$},
+    };
+
+Use the C<code> key instead of C<regex> to apply a subroutine 
+reference.  The subroutine takes one argument: the value being tested.
+It should return a true value if the value is valid.  Regular 
+expressions are used in favor of code references if both are present.
+
+Only the syntaxes from RFC 2252 are currently included (though only a few
+have regular expressions or code references yet).
+
+=back
+
+=head1 CONFIGURATION
+
+Three class methods are required to configure a data class.
+
+=head2 base_dn
+
+The C<base_dn> is both the search base for finding objects and the 
+common portion of the C<dn> across all objects represented by the 
+the search base and the class (also called a `branch' in the rest of this document).
+
+=head2 id_field
+
+The C<id_field> is the attribute containing the unique identifier for 
+an object within a branch.  The value of the C<id_field> and the 
+C<base_dn> together are used to create the C<dn> of an object.
+This is the attribute C<object_id> is mapped to when creating or 
+loading objects using L<Gestinanna::POF|Gestinanna::POF>.
+
+=head2 default_objectclass
+
+The C<default_objectclass> is the initial object class (or list of 
+them) that is given to any new objects that are created by 
+L<Gestinanna::POF|Gestinanna::POF> and are not in the directory.
+This may be a single value of an array reference containing multiple values.
+All the object classes should be valid object classes in the LDAP schema.
+
+=head1 DATA CONNECTIONS
+
+This module expects an L<Net::LDAP|Net::LDAP> connection and an 
+(optional) L<Net::LDAP::Schema|Net::LDAP::Schema> object from the 
+factory.  If the schema object is not provided, it will pull a copy 
+from the LDAP server.
+Providing this at the time the factory is created is sufficient.
+    
+ $factory = Gestinanna::POF -> new(_factory => (
+      ldap => $ldap_connection,
+      ldap_schema => $ldap_schema,
+ ) );
 
 =head1 SEE ALSO
 
-L<Gestinanna::POF>
+L<Gestinanna::POF>,
+L<Net::LDAP>,
+L<Net::LDAP::Schema>.
 
 =head1 AUTHOR
 

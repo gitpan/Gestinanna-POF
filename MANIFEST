@@ -4,6 +4,15 @@ MANIFEST
 META.yml
 Makefile.PL
 README
+data/core.schema
+data/cosine.schema
+data/inetorgperson.schema
+data/schema.in
+data/slapd-conf.in
+data/slapd.at.conf
+data/slapd.oc.conf
+data/slapd2-conf.in
+ldap.cfg
 lib/Gestinanna/POF.pm
 lib/Gestinanna/POF/Alzabo.pm
 lib/Gestinanna/POF/Base.pm
@@ -25,6 +34,7 @@ t/40lock.t
 t/50secure+lock.t
 t/99pod.t
 t/api_tests
+t/ldap
 t/lib/My/Locker.pm
 t/lib/Alzabo/Driver/SQLite.pm
 t/lib/Alzabo/RDBMSRules/SQLite.pm

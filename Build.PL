@@ -12,4 +12,12 @@ my $m = Module::Build -> new(
         Params::Validate => 0.24,
         NEXT => 0,
     },
+    recommends => {
+        MLDBM => 0,
+        MLDBM::Sync => 0,
+        Net::LDAP => 0,
+        Alzabo => 0,
+        DBI => 0, # for testing
+        DBD::SQLite => 0, # for testing
+    },
 ) -> create_build_script;

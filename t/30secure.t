@@ -99,11 +99,52 @@ if($e = $@) {
 plan tests => (  $Gestinanna::POF::NumTests::API 
                + $Gestinanna::POF::NumTests::SECURE_API 
                + $Gestinanna::POF::NumTests::SECURE_RO_API 
-               + 8
+               + 8 + 1
               );
 
 my $object_class = 'My::Secure::Type';
 
+eval q"
+package My::Alzabo::Type;
+
+use base qw(Gestinanna::POF::Alzabo);
+
+our $VERSION = 1;
+
+use constant table => 'Thing';
+
+
+
+use Class::ISA;
+
+
+package My::Secure::Type;
+
+use base qw(
+    My::Secure::Package
+    My::Alzabo::Type
+);
+
+use constant table => 'Thing';
+
+our $VERSION = 1;
+
+
+package My::ReadOnly::Type;
+
+use base qw(
+    Gestinanna::POF::Secure::ReadOnly
+    My::Alzabo::Type
+);
+
+use constant table => 'Thing';
+
+our $VERSION = 1;
+";
+
+$e = $@; diag($e) if $e;
+
+ok(!$e, "Defined test data types");
 
 ###
 ### 1
@@ -196,41 +237,3 @@ sub has_access {
     return 1;
 }
 
-
-package My::Alzabo::Type;
-
-use base qw(Gestinanna::POF::Alzabo);
-
-our $VERSION = 1;
-
-use constant table => 'Thing';
-
-
-
-use Class::ISA;
-
-
-package My::Secure::Type;
-
-use base qw(
-    My::Secure::Package
-    My::Alzabo::Type
-);
-
-use constant table => 'Thing';
-
-our $VERSION = 1;
-
-
-package My::ReadOnly::Type;
-
-use base qw(
-    Gestinanna::POF::Secure::ReadOnly
-    My::Alzabo::Type
-);
-
-use constant table => 'Thing';
-
-our $VERSION = 1;
-
-1;

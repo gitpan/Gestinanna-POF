@@ -100,11 +100,73 @@ plan tests => (  $Gestinanna::POF::NumTests::API
                + $Gestinanna::POF::NumTests::SECURE_API 
                + $Gestinanna::POF::NumTests::SECURE_RO_API 
                + 8
-               + 2 + 10
+               + 3 + 10
               );
 
 my $object_class = 'My::Secure::Type';
 
+
+eval q"
+package My::Secure::Package;
+
+use base qw(Gestinanna::POF::Secure);
+
+our $VERSION = 1;
+
+sub has_access {
+    my($self, $attribute, $access) = @_;
+
+    # do check - return true or false
+    $main::has_actor = defined $self -> {actor};
+    $main::has_access_attribute = $attribute;
+    $main::has_access_access = $access;
+
+    return 1;
+}
+
+
+package My::Alzabo::Type;
+
+use base qw(Gestinanna::POF::Alzabo);
+
+our $VERSION = 1;
+
+use constant table => 'Thing';
+
+
+
+use Class::ISA;
+
+
+package My::Secure::Type;
+
+use base qw(
+    My::Secure::Package
+    My::Locker
+    My::Alzabo::Type
+);
+
+use constant table => 'Thing';
+
+our $VERSION = 1;
+
+
+package My::ReadOnly::Type;
+
+use base qw(
+    Gestinanna::POF::Secure::ReadOnly
+    My::Locker
+    My::Alzabo::Type
+);
+
+use constant table => 'Thing';
+
+our $VERSION = 1;
+";
+
+$e = $@; diag($e) if $e;
+
+ok(!$e, "Defined test data types");
 
 ###
 ### 1
@@ -224,62 +286,3 @@ eval {
 };
 
 exit 0;
-
-
-package My::Secure::Package;
-
-use base qw(Gestinanna::POF::Secure);
-
-our $VERSION = 1;
-
-sub has_access {
-    my($self, $attribute, $access) = @_;
-
-    # do check - return true or false
-    $main::has_actor = defined $self -> {actor};
-    $main::has_access_attribute = $attribute;
-    $main::has_access_access = $access;
-
-    return 1;
-}
-
-
-package My::Alzabo::Type;
-
-use base qw(Gestinanna::POF::Alzabo);
-
-our $VERSION = 1;
-
-use constant table => 'Thing';
-
-
-
-use Class::ISA;
-
-
-package My::Secure::Type;
-
-use base qw(
-    My::Secure::Package
-    My::Locker
-    My::Alzabo::Type
-);
-
-use constant table => 'Thing';
-
-our $VERSION = 1;
-
-
-package My::ReadOnly::Type;
-
-use base qw(
-    Gestinanna::POF::Secure::ReadOnly
-    My::Locker
-    My::Alzabo::Type
-);
-
-use constant table => 'Thing';
-
-our $VERSION = 1;
-
-1;

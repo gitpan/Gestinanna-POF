@@ -348,17 +348,61 @@ This would also be comparable to the following LDAP search string:
 
 =back
 
-Data stores are expected to support AND, OR, and negation of statements 
-via NOT as well as the =, !=, <, >, <=, and >= comparisons.  More may 
-be added later (such as IN or BETWEEN from SQL and an existance operation 
-similar to LDAP's =* comparison or SQL's IS NULL).
-
 This method should return a list of objects which satisfy the search 
 criteria.  If no objects match, an empty list should be returned.  If 
 there is an error, then either an exception should be thrown or 
 C<undef> returned.
 
 See L<Gestinanna::POF::Iterator> for more information.
+
+
+=head1 SEARCH OPERATIONS
+
+Data stores are expected to support AND, OR, and negation of statements 
+via NOT as well as the following operators.  More may be added later 
+(such as IN or BETWEEN from SQL).
+
+=head2 Binary Operations
+
+=over 4
+
+=item =
+
+Equality.  This may be string or numeric equality.  Most databases do 
+not distinguish between the two in their syntax, basing it on the data 
+type of the attribute being tested.
+
+=item !=
+
+This should be the opposite truth of C<=>.
+
+=item <
+
+Preceeds.  This should be true if the left value would sort earlier than the right value in ascending order.
+
+=item >
+
+Succeeds.  This should be true if the left value would sort later than the right value in ascending order.
+
+=item <=
+
+This should be the opposite truth of C<E<gt>>.
+
+=item >=
+
+This should be the opposite truth of C<E<lt>>.
+
+=back
+
+=head2 Unary Operations
+
+=over 4
+
+=item EXISTS
+
+This should be true if the attribute exists and is set to a defined value.
+
+=back
 
 =head1 TRANSACTIONS
 

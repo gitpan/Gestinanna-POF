@@ -125,8 +125,42 @@ if($@) {
 # see if we can do what we need to
 
 
-plan tests => 3*$Gestinanna::POF::NumTests::API + 2;
+plan tests => 3*$Gestinanna::POF::NumTests::API + 3;
 
+eval "
+############
+
+package My::MLDBM::Type;
+
+use base qw(Gestinanna::POF::MLDBM);
+
+use public qw(this that foo bar);
+
+
+######
+
+package My::Alzabo::Type;
+
+use base qw(Gestinanna::POF::Alzabo);
+
+use constant table => Thing;
+
+
+######
+
+package My::Container::Type;
+
+use base qw(Gestinanna::POF::Container);
+
+__PACKAGE__ -> contained_objects(
+    dbm => 'My::MLDBM::Type',
+    rdbms => 'My::Alzabo::Type',
+);  
+";
+
+$e = $@; diag($e) if $e;
+
+ok(!$e, "Defined test data types");
 
 ###
 ### 1
@@ -182,35 +216,5 @@ eval {
 $e = $@; diag($e) if $e;
 
 
-############
-
-package My::MLDBM::Type;
-
-use base qw(Gestinanna::POF::MLDBM);
-
-use public qw(this that foo bar);
-
-
-######
-
-package My::Alzabo::Type;
-
-use base qw(Gestinanna::POF::Alzabo);
-
-use constant table => Thing;
-
-
-######
-
-package My::Container::Type;
-
-use base qw(Gestinanna::POF::Container);
-
-BEGIN {
-    __PACKAGE__ -> contained_objects(
-        dbm => 'My::MLDBM::Type',
-        rdbms => 'My::Alzabo::Type',
-    );  
-}
  
 1;

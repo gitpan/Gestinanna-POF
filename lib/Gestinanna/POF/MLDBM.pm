@@ -8,9 +8,9 @@ use Carp;
 
 use strict;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
-our $REVISION = (qw$Revision: 1.7 $)[-1];
+our $REVISION = (qw$Revision: 1.8 $)[-1];
 
 use protected qw(mldbm);
 
@@ -183,32 +183,42 @@ sub _find2where {
 
         # plain clause
         return if @$search > 3;
+        return if @$search < 2;
 
         return unless $self -> is_public($search->[0]);
         return unless $self -> has_access($search->[0], [ 'search' ]);
 
-        my($k, $v) = @{$search}[0,2];
-
-        if(ref($v) eq 'SCALAR') {
-            return '' unless $self -> is_public($v) && $self -> has_access($v, [ 'search' ]);
-            return '' if $self -> has_access($v, [ 'read' ]) && !$self -> has_access($search->[0], [ 'read' ])
-                         || !$self -> has_access($v, [ 'read' ]) && $self -> has_access($search->[0], [ 'read' ]);
-
-            for($search -> [1]) { # switch on op
-                /^=$/ && return sub { $_[0] -> {$k} eq $_[0] -> {$v}; };
-                /^<$/ && return sub { $_[0] -> {$k} lt $_[0] -> {$v}; };
-                /^>$/ && return sub { $_[0] -> {$k} gt $_[0] -> {$v}; };
-                /^<=$/ && return sub { $_[0] -> {$k} le $_[0] -> {$v}; };
-                /^>=$/ && return sub { $_[0] -> {$k} ge $_[0] -> {$v}; };
+        if(@$search == 2) {
+            my $k = $search -> [0];
+            my $op = $search -> [1];
+            if($op eq 'EXISTS') {
+                return sub { exists($_[0] -> {$k}) && defined($_[0] -> {$k}); };
             }
         }
         else {
-            for($search -> [1]) { # switch on op
-                /^=$/ && return sub { $_[0] -> {$k} eq $v; };
-                /^<$/ && return sub { $_[0] -> {$k} lt $v; };
-                /^>$/ && return sub { $_[0] -> {$k} gt $v; };
-                /^<=$/ && return sub { $_[0] -> {$k} le $v; };
-                /^>=$/ && return sub { $_[0] -> {$k} ge $v; };
+            my($k, $v) = @{$search}[0,2];
+
+            if(ref($v) eq 'SCALAR') {
+                return '' unless $self -> is_public($v) && $self -> has_access($v, [ 'search' ]);
+                return '' if $self -> has_access($v, [ 'read' ]) && !$self -> has_access($search->[0], [ 'read' ])
+                             || !$self -> has_access($v, [ 'read' ]) && $self -> has_access($search->[0], [ 'read' ]);
+
+                for($search -> [1]) { # switch on op
+                    /^=$/ && return sub { $_[0] -> {$k} eq $_[0] -> {$v}; };
+                    /^<$/ && return sub { $_[0] -> {$k} lt $_[0] -> {$v}; };
+                    /^>$/ && return sub { $_[0] -> {$k} gt $_[0] -> {$v}; };
+                    /^<=$/ && return sub { $_[0] -> {$k} le $_[0] -> {$v}; };
+                    /^>=$/ && return sub { $_[0] -> {$k} ge $_[0] -> {$v}; };
+                }
+            }
+            else {
+                for($search -> [1]) { # switch on op
+                    /^=$/ && return sub { $_[0] -> {$k} eq $v; };
+                    /^<$/ && return sub { $_[0] -> {$k} lt $v; };
+                    /^>$/ && return sub { $_[0] -> {$k} gt $v; };
+                    /^<=$/ && return sub { $_[0] -> {$k} le $v; };
+                    /^>=$/ && return sub { $_[0] -> {$k} ge $v; };
+                }
             }
         }
     }

@@ -1,17 +1,16 @@
                        --------------------
-                       Gestinanna::POF 0.03
+                       Gestinanna::POF 0.04
                        --------------------
 
 Gestinanna::POF is a collection of modules providing an abstract 
 persistant object framework intended for use by the Gestinanna 
 application framework though it may be used outside of that framework.
 
-Gestinanna::POF currently supports Alzabo, MLDBM, LDAP (limited 
-testing), and aggregations of objects.  Security is supported on an 
-attribute basis instead of object basis, providing finer granularity 
-than most other persistant object frameworks.  A rudimentary, abstract 
-locking protocol is supported.  Transaction support is still in 
-development.
+Gestinanna::POF currently supports Alzabo, MLDBM, LDAP, and 
+aggregations of objects.  Security is supported on an attribute basis 
+instead of object basis, providing finer granularity than most other 
+persistant object frameworks.  A rudimentary, abstract locking 
+protocol is supported.  Transaction support is still in development.
 
 Gestinanna::POF tries to stress security over performance, so it may 
 not perform as well as other frameworks.  If you do not need attribute-
@@ -53,4 +52,4 @@ Copyright (C) 2002-2003  Texas A&M University.  All Rights Reserved.
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
-$Id: README,v 1.3 2003/06/17 16:33:26 jgsmith Exp $
+$Id: README,v 1.4 2003/06/27 21:13:58 jgsmith Exp $

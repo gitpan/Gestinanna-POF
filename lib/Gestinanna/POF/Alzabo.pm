@@ -4,9 +4,9 @@ use base qw(Gestinanna::POF::Base);
 use Carp;
 use strict;
 
-our $VERSION = '0.03';
+our $VERSION = '0.04';
 
-our $REVISION = substr q$Revision: 1.11 $, 10;
+our $REVISION = substr q$Revision: 1.12 $, 10;
 
 use private qw(_row _columns);
 
@@ -345,11 +345,17 @@ sub _find2where {
                     /^>=$/ && do { push @$where, '<' } && next;
                     /^<$/ && do { push @$where, '>=' } && next;
                     /^>$/ && do { push @$where, '<=' } && next;
+                    /^EXISTS$/ && do { push @$where, '=', undef; } && next;
                     push @$where, "NOT " . $search->[1];  # default
                 }
             }
             else {
-                push @$where, $search -> [1];
+                if($search->[1] eq 'EXISTS') {
+                    push @$where, '!=', undef;
+                }
+                else {
+                    push @$where, $search -> [1];
+                }
             }
 
             for my $bit (@{$search}[2..$n]) {
@@ -453,6 +459,15 @@ For example,
 This will create a new object with the specified primary key values.  
 The object will be stored in the RDBMS when the C<save> method is 
 called (or when the object is destroyed if C<Commit> is true).
+
+=head1 DATA CONNECTIONS
+
+This module expects an L<Alzabo|Alzabo> schema from the factory.  
+Providing this at the time the factory is created is sufficient.
+
+ $factory = Gestinanna::POF -> new(_factory => (
+      schema => $alzabo_schema
+ ) );
 
 =head1 AUTHOR
 

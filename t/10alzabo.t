@@ -93,7 +93,19 @@ if($e = $@) {
 
 # see if we can do what we need to
 
-plan tests => ($Gestinanna::POF::NumTests::API + 2);
+plan tests => ($Gestinanna::POF::NumTests::API + 3);
+
+eval q"
+package My::Alzabo::Type;
+
+use base qw(Gestinanna::POF::Alzabo);
+
+use constant table => Thing;
+";
+
+$e = $@;  diag($e) if $e;
+
+ok(!$e, "Define test data type");
 
 
 ###
@@ -135,11 +147,5 @@ eval {
 };
 
 exit 0;
-
-package My::Alzabo::Type;
-
-use base qw(Gestinanna::POF::Alzabo);
-
-use constant table => Thing;
 
 1;
