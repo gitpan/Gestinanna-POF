@@ -1,0 +1,54 @@
+                       --------------------
+                       Gestinanna::POF 0.01
+                       --------------------
+
+Gestinanna::POF is a collection of modules providing an abstract 
+persistant object framework intended for use by the Gestinanna 
+application framework though it may be used outside of that framework.
+
+Gestinanna::POF currently supports Alzabo, MLDBM, LDAP (limited 
+testing), and aggregations of objects.  Security is supported on an 
+attribute basis instead of object basis, providing finer granularity 
+than most other persistant object frameworks.  A rudimentary, abstract 
+locking protocol is supported.  Transaction support is still in 
+development.
+
+Gestinanna::POF tries to stress security over performance, so it may 
+not perform as well as other frameworks such as SPOPS.  If you do not 
+need attribute-level security, you will probably want to look at one 
+of the other more mature frameworks also available on CPAN.
+
+To install Gestinanna::POF, download the distribution, untar, and cd 
+into the resulting directory.  There, run the following:
+
+  % perl Makefile.PL
+  % make
+  % make test
+  % make install
+
+or
+
+  % perl Build.PL
+  % ./Build
+  % ./Build test
+  % ./Build install
+
+Extensive tests of the Alzabo and aggregate support require the Alzabo 
+package and DBD::SQLite.
+
+Testing of the MLDBM support requires the MLDBM module.
+
+Testing locking requires the NEXT module.
+
+All modules required for testing and use are available on CPAN.
+
+The author lurks on both the mod_perl list as well as various IRC channels.  
+Feel free to send questions there.
+
+
+Copyright (C) 2002-2003  Texas A&M University.  All Rights Reserved.
+
+This program is free software; you can redistribute it and/or modify it
+under the same terms as Perl itself.
+
+$Id: README,v 1.1 2003/06/09 20:40:01 jgsmith Exp $

@@ -1,0 +1,354 @@
+$Gestinanna::POF::NumTests::API = 18 + 6;
+$Gestinanna::POF::NumTests::SECURE_API = 14;
+$Gestinanna::POF::NumTests::SECURE_RO_API = 8;
+
+sub run_api_tests {
+    my($factory, $object_id, $field) = @_;
+
+    my $e; # for $@;
+
+    ## 1
+
+    eval {
+        $object = $factory -> new(test => (object_id => $object_id));
+    };
+
+    $e = $@; diag($e) if $e;
+    ok($object && !$e, "Creating a new object");
+
+
+
+    ## 2
+
+    my $is_live;
+    eval {
+        $is_live = $object -> is_live;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Called is_live");
+
+    ## 3
+
+    is($is_live, 0, "Object is not live");
+
+
+    ## 4
+
+    eval {
+        $object -> $field('other');
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Setting a value");
+
+
+    ## 5
+
+    my $this;
+    eval {
+        $this = $object -> $field;
+    };
+
+    $e = $@; diag($e) if $e;
+    is($this, 'other');
+
+
+    ## 6
+
+    eval {
+        $object -> save;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Saving object");
+
+
+    ## 7
+
+    eval {
+        $is_live = $object -> is_live;
+    };
+
+    $e = $@; diag($e) if $e;
+    is($is_live, 1, "Object is live");
+
+
+    ## 8
+
+    eval {
+        $object -> $field('another');
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Updating a value");
+
+    ## 9
+
+    eval {
+        $this = $object -> $field;
+    };
+
+    $e = $@; diag($e) if $e;
+    is($this, 'another');
+
+
+    ## 10
+
+    eval {
+        $object -> save;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Saving object");
+
+
+    ## 11
+
+    eval {
+        $is_live = $object -> is_live;
+    };
+
+    $e = $@; diag($e) if $e;
+    is($is_live, 1, "Object is live");
+
+
+
+    ## 12
+
+    undef $object;
+
+    eval {
+        $object = $factory -> new(test => (object_id => $object_id));
+    };
+
+    $e = $@; diag($e) if $e;
+    ok($object && !$e, "Loading an old object");
+
+
+    ## 13
+
+    eval {
+        $is_live = $object -> is_live;
+    };
+
+    $e = $@; diag($e) if $e;
+    is($is_live, 1, "Object is live");
+
+
+    ## 14
+    
+    eval {
+        $this = $object -> $field;
+    };
+    
+    $e = $@; diag($e) if $e;
+    is($this, 'another');
+
+
+
+    ## 15
+
+    eval {
+        $object -> delete;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Deleting object");
+
+    ## 16
+
+    eval {
+        $is_live = $object -> is_live;
+    };
+  
+    $e = $@; diag($e) if $e;
+    is($is_live, 0, "Object is not live");
+
+
+    ## 17
+
+    undef $object;
+ 
+    eval {
+        $object = $factory -> new(test => (object_id => $object_id));
+    };
+    
+    $e = $@; diag($e) if $e;
+    ok($object && !$e, "Loading deleted object");
+
+    
+    ## 18
+
+    eval {
+        $is_live = $object -> is_live;
+    };
+
+    $e = $@; diag($e) if $e;
+    is($is_live, 0, "Object is not live");
+
+    ## now to load a series of objects and then do some simple searching
+    my @foos = qw(foo bar bing bar bat bot fot fite lite latte little spittle foo bot);
+
+    eval {
+        for my $i (0..$#foos) {
+            $object = $factory -> new(test => (object_id => $i+1));
+            $object -> $field($foos[$i]);
+            $object -> save;
+        }
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Created a bunch of objects");
+
+    my @objects;
+    eval {
+        @objects = $factory -> find(test => (criteria => [ $field, '=', 'foo' ]));
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Did a search for foo");
+
+TODO: {
+    local $TODO = 'find() not yet implemented';
+
+    is(scalar(@objects), 2, "Expect two objects");
+    is(ref $objects[0] && $objects[0]->object_id, 0, "First should be object_id of 0");
+    is(ref $objects[1] && $objects[1]->object_id, 12, "First should be object_id of 12");
+};
+
+    eval {
+        for my $i (0..$#foos) {
+            $object = $factory -> new(test => (object_id => $i+1));
+            $object -> delete;
+        }
+    };
+
+    $e = $@;  diag($e) if $e;
+    ok(!$e, "Removed the bunch of objects");
+
+}
+
+sub run_secure_api_tests {
+    my($factory, $object_id, $field) = @_;
+
+    my $e; # for $@;
+    my $object;
+
+    ## 1
+
+    eval {   
+        $object = $factory -> new(test => (object_id => $object_id));
+    };
+      
+    $e = $@; diag($e) if $e;
+    ok($object && !$e, "Creating a new object");
+
+    ## 2-3 (temp?)
+    ok($object -> isa('Gestinanna::POF::Secure'));
+    ok($object -> isa('Gestinanna::POF::Base'));
+
+    ok($object -> isa('Gestinanna::POF::Secure'));
+    ok($object -> isa('Gestinanna::POF::Base'));
+
+    ## 2 - 5
+
+    $main::has_actor =
+    $main::has_access_attribute =
+    $main::has_access_access = undef;
+
+    eval {
+        $object -> $field('other');
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Setting a value");
+
+
+    ok($main::has_actor, "Has actor on set");
+    ok($main::has_access_attribute, "Has an attribute on set");
+    is($main::has_access_access && $main::has_access_access->[0], 'write', "Requesting write access");
+
+    ## 6 - 9
+
+    $main::has_actor =
+    $main::has_access_attribute =
+    $main::has_access_access = undef;
+
+    my $this;  
+    eval {
+        $this = $object -> $field;
+    };
+      
+    $e = $@; diag($e) if $e;
+    is($this, 'other');
+
+    ok($main::has_actor, "Has actor on get");
+    ok($main::has_access_attribute, "Has an attribute on get");
+    is($main::has_access_access && $main::has_access_access->[0], 'read', "Requesting read access");
+
+    ## 10
+
+    eval {
+        $object -> delete;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Object deleted");
+
+}
+
+sub run_secure_ro_api_tests {
+    my($factory, $object_id, $field) = @_;
+
+    my $e; # for $@;
+    my $object;
+
+    ## 1
+
+    eval {   
+        $object = $factory -> new(ro_test => (object_id => $object_id));
+    };
+      
+    $e = $@; diag($e) if $e;
+    ok($object && !$e, "Creating a new object");
+
+    ## 2-3 (temp?)
+    ok($object -> isa('Gestinanna::POF::Secure'));
+    ok($object -> isa('Gestinanna::POF::Base'));
+
+    ok($object -> isa('Gestinanna::POF::Secure'));
+    ok($object -> isa('Gestinanna::POF::Base'));
+
+    ## 2 - 5
+
+    eval {
+        $object -> $field('other');
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Setting a value");
+
+
+    ## 6 - 9
+
+    my $this;  
+    eval {
+        $this = $object -> $field;
+    };
+      
+    $e = $@; diag($e) if $e;
+    is($this, undef);
+
+    ## 10
+
+    eval {
+        $object -> delete;
+    };
+
+    $e = $@; diag($e) if $e;
+    ok(!$e, "Object deleted");
+
+}
+
+1;
