@@ -5,9 +5,9 @@ use base (Class::Factory);
 use Gestinanna::POF::Iterator;
 use Carp;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
-our $REVISION = substr(q$Revision: 1.7 $, 10);
+our $REVISION = substr(q$Revision: 1.9 $, 10);
 
 sub new {
     my $self = shift;
@@ -44,7 +44,7 @@ sub find {
 
     return unless ref $self; # need the %params stuff
 
-    my($type, @params) = @_;
+    my($type, %params) = @_;
 
     my $class = $self -> get_factory_class($type);
 
@@ -52,7 +52,7 @@ sub find {
         my $cursor;
 
         eval {
-            $cursor = $class -> find(@params, _factory => $self -> {_factory});
+            $cursor = $class -> find(%params, _factory => $self -> {_factory});
         };
         my $e = $@;
         if(chomp($e)) {

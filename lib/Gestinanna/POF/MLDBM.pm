@@ -3,18 +3,19 @@ package Gestinanna::POF::MLDBM;
 use base Gestinanna::POF::Base;
 
 use MLDBM ();
+use Params::Validate qw(:types);
 use Carp;
 
 use strict;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
-our $REVISION = (qw$Revision: 1.5 $)[-1];
+our $REVISION = (qw$Revision: 1.7 $)[-1];
 
 use protected qw(mldbm);
 
 __PACKAGE__->valid_params (
-    mldbm => { isa => 'MLDBM' },
+    mldbm => { can => [qw( FIRSTKEY NEXTKEY TIEHASH )] },
 );
 
 sub save {
@@ -72,26 +73,60 @@ sub find {
 
     my @keys;
     my $k;
+
+    $mldbm -> ReadLock if $mldbm -> isa('MLDBM::Sync');
+
     push @keys, $k = $mldbm -> FIRSTKEY;
     push @keys, $k while $k = $mldbm -> NEXTKEY($k);
+
+    $mldbm -> UnLock if $mldbm -> isa('MLDBM::Sync');
+
     if(@keys == grep { /^\d+$/ } @keys) {
         @keys = sort { $a <=> $b } @keys;
     }
     else {
         @keys = sort @keys;
     }
+
+    my $generator;
+
+    if($mldbm -> isa('MLDBM::Sync')) {
+        $generator = sub {
+            my($i, $k);
+
+            $mldbm -> ReadLock;
+
+            $i = 0;
+
+            while($k = shift @keys) {
+                last if $where -> ($mldbm -> FETCH($k));
+                if(++$i % 100 == 0) {
+                    $mldbm -> UnLock;
+                    $mldbm -> ReadLock;
+                }
+            }
+
+            $mldbm -> UnLock;
+
+            return $k;
+        };
+    }
+    else {
+        $generator = sub {
+            my $k;
+
+            while($k = shift @keys) {
+                return $k if $where -> ($mldbm -> FETCH($k));
+            }
+            return;
+        };
+    }
  
     return Gestinanna::POF::Iterator -> new(
         factory => $self -> {_factory},
         type => $type,
         limit => $limit,
-        generator => sub {
-            my $k;
-            while($k = shift @keys) {
-                return $k if $where -> ($mldbm -> FETCH($k));
-            }
-            return;
-        },
+        generator => $generator,
         cleanup => sub {
         },
     );
@@ -213,13 +248,27 @@ Gestinanna::POF::MLDBM - MLDBM interface for persistant objects
 
 =head1 DESCRIPTION
 
+This module supports MLDBM data stores through either the L<MLDBM|MLDBM> 
+or the L<MLDBM::Sync|MLDBM::Sync> modules.
+
+Actually, it can work with any data source that has a tied hash 
+interface (implements the FETCH, STORE, EXISTS, DELETE, FIRSTKEY, 
+NEXTKEY methods).
+
+=head1 DATA STORE
+
+The data store object is C<mldbm> and is a required parameter for 
+object creation.  Usually, this is set in the factory object which 
+then passes it to this class when a new object is being created or 
+fetched from the data store.
+
 =head1 AUTHOR
 
 James Smith, <jsmith@cpan.org>
 
 =head1 COPYRIGHT
 
-Copyright (C) 2002, 2003 Texas A&M University.  All Rights Reserved.
+Copyright (C) 2002-2003 Texas A&M University.  All Rights Reserved.
 
 This module is free software; you can redistribute it and/or
 modify it under the same terms as Perl itself.

@@ -9,7 +9,7 @@ use Net::LDAP::Control::Sort;
 
 our $VERSION = '0.02';
 
-our $REVISION = (split /\s+/, q$Revision: 1.6 $, 3)[1];
+our $REVISION = (split /\s+/, q$Revision: 1.7 $, 3)[1];
 
 #use fields qw(_entry _is_live ldap);
 use public qw(ldap ldap_schema dn);
@@ -382,6 +382,14 @@ sub _attribute_allowed {
     }
     return 0;
 }
+
+sub _attribute_exists {
+    my($self, $attribute) = @_;
+
+    return 1 if $self -> {ldap_schema} -> attribute($attribute);
+
+    return 0;
+}
         
 sub _required_attributes {
     my($self) = @_;
@@ -556,13 +564,16 @@ sub load {
 
 sub find {
     my($self, %params) = @_;
-        
+
     my $search = delete $params{where};
     my $limit = delete $params{limit};
+
     return unless UNIVERSAL::isa($search, 'ARRAY');
         
     unless(ref $self) {
-        $self = bless { %params } => $self;
+        $self = bless { ldap => $params{_factory} -> {ldap},
+                        ldap_schema => $params{_factory} -> {ldap_schema} || $params{_factory} -> {ldap} -> schema,
+                        %params } => $self;
     }
 
     my $type = $self -> {_factory} -> get_object_type($self);
@@ -574,13 +585,14 @@ sub find {
 
     my $where = $self -> _find2where($search);
 
+    #main::diag("LDAP search string: $where");
     croak "No search criteria are appropriate" if $where eq '';
 
     my $cursor = $self -> {ldap} -> search( 
         base => $self -> base_dn,
-        filter => $self -> _find2where($search),
+        filter => $where,
         attrs => [ $id_field ],
-        control => [ $sort ] 
+        #control => [ $sort ] 
     );
 
     return Gestinanna::POF::Iterator -> new(
@@ -589,8 +601,8 @@ sub find {
         limit => $limit,
         generator => sub {
             my $entry = $cursor -> shift_entry;
-            if($row) {
-                return $row -> get_value($id_field);
+            if($entry) {
+                return $entry -> get_value($id_field);
             }
             return;
         },
@@ -614,60 +626,61 @@ sub _find2where {
     my $search = shift;
 
     my $where;
-    my $n = scalar(@$search) - 1;
+    my $n = $#$search;
+
+    use Data::Dumper;
 
     for($search -> [0]) {
         /^AND$/ && do {
-            my @clauses = grep { @{$_} > 0 } map { $self -> _find2where($_) } @{$search}[1..$n];
+            my @clauses = grep { $_ ne '' } map { $self -> _find2where($_) } @{$search}[1..$#$search];
             if(@clauses > 1) {
-                $n = $#clauses; 
-                $where = '(&' . join('', @clauses) . ')';
+                return '(&' . join('', @clauses) . ')';
             }
             elsif(@clauses) {
-                $where = $clauses[0];
+                return $clauses[0];
             }
             else {
-                $where = '';
+                return '';
             }
-        } && next;
+        };
 
         /^OR$/ && do {
-            my @clauses = map { $self -> _find2where($_) } @{$search}[1..$n];
+            my @clauses = grep { $_ ne '' } map { $self -> _find2where($_) } @{$search}[1..$n];
             if(@clauses > 1) {
-                $n = scalar(@clauses) - 1;
-                $where = '(|' . join('', @clauses) . ')';
+                return '(|' . join('', @clauses) . ')';
             }
             elsif(@clauses) {
-                $where = $clauses[0];
+                return $clauses[0];
             }
             else {
-                $where = '';
+                return '';
             }
-        } && next;
+        };
 
         /^NOT$/ && do {
             $where = $self -> _find2where([ @{$search}[1..$n] ]);    
             if($where ne '') {
-                 $where = "(!$where)";
+                return "(!$where)";
             }
             else {
-                $where = '';
+                return '';
             }
-        } && next;
+        };
 
         # plain clause
         if(@$search > 3) {
-            $where = '';
+            return '';
         }
         else {
             my($attr, $op, $test) = @$search;
+            #main::diag("Test: $attr | $op | $test");
             my($pre, $post);
             if(exists $ops{$op} 
-               && $self -> is_public($attr) 
+               && ($self -> _attribute_exists($attr)  || $attr eq $self -> id_field)
                && $self -> has_access($attr, [ 'search' ])) 
             {
                 if(defined $ops{$op}) {
-                    if($ops{$op} -> isa('ARRAY')) {
+                    if(UNIVERSAL::isa($ops{$op}, 'ARRAY')) {
                         ($pre, $op, $post) = @{$ops{$op}};
                     }
                     else {

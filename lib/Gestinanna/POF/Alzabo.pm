@@ -4,9 +4,9 @@ use base qw(Gestinanna::POF::Base);
 use Carp;
 use strict;
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
-our $REVISION = substr q$Revision: 1.9 $, 10;
+our $REVISION = substr q$Revision: 1.11 $, 10;
 
 use private qw(_row _columns);
 
@@ -108,7 +108,7 @@ sub save {
     my $class = ref $self || $self;
 
     # create a row in the table if needed
-    unless($self -> is_live) {
+    unless(is_live($self)) {
         if($self -> {_row}) {
             my $values = {
                 map { $_ => $self -> {$_} }

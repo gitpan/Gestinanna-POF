@@ -1,6 +1,6 @@
 --- #YAML:1.0
 name: Gestinanna-POF
-version: 0.02
+version: 0.03
 license: perl
 distribution_type: module
 requires:
@@ -14,9 +14,12 @@ recommends: {}
 build_requires: {}
 conflicts: {}
 provides:
+  Gestinanna::POF:
+    file: lib/Gestinanna/POF.pm
+    version: 0.03
   Gestinanna::POF::Alzabo:
     file: lib/Gestinanna/POF/Alzabo.pm
-    version: 0.02
+    version: 0.03
   Gestinanna::POF::Base:
     file: lib/Gestinanna/POF/Base.pm
     version: 0.02
@@ -34,7 +37,7 @@ provides:
     version: ~
   Gestinanna::POF::MLDBM:
     file: lib/Gestinanna/POF/MLDBM.pm
-    version: 0.02
+    version: 0.03
   Gestinanna::POF::Secure:
     file: lib/Gestinanna/POF/Secure.pm
     version: 0.02

@@ -1,0 +1,33 @@
+0.03  17 Jun 2003
+
+ENHANCEMENTS:
+
+- Added support for MLDBM::Sync to Gestinanna::POF::MLDBM.
+
+- Added private (unpublished) tests for Gestinanna::POF::LDAP.
+It should work with LDAP databases at least in read-only mode.
+
+BUG FIXES:
+
+- Gestinanna::POF::Alzabo had incorrect is_live call to see if 
+it should insert or update.  This was exposed by the 
+Gestinanna::POF::Repository package.
+
+
+
+0.02  15 Jun 2003
+
+ENHANCEMENTS:
+
+- Fairly complete searching of data stores (within practical limits).
+
+BUG FIXES:
+
+- Corrected support for grouping, etc., in Gestinanna::POF::Alzabo 
+searches.
+
+
+
+0.01  12 Jun 2003
+
+Initial release

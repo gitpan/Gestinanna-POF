@@ -1,4 +1,5 @@
 Build.PL
+Changes
 MANIFEST
 META.yml
 Makefile.PL
@@ -16,6 +17,7 @@ lib/Gestinanna/POF/Secure/ReadOnly.pm
 t/00basic.t
 t/10alzabo.t
 t/10ldap.t
+t/10mldbm-sync.t
 t/10mldbm.t
 t/20container.t
 t/30secure.t

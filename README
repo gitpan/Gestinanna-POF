@@ -1,5 +1,5 @@
                        --------------------
-                       Gestinanna::POF 0.02
+                       Gestinanna::POF 0.03
                        --------------------
 
 Gestinanna::POF is a collection of modules providing an abstract 
@@ -38,6 +38,8 @@ package and DBD::SQLite.
 
 Testing of the MLDBM support requires the MLDBM module.
 
+Testing of the MLDBM::Sync support requires the MLDBM::Sync module.
+
 Testing locking requires the NEXT module.
 
 All modules required for testing and use are available on CPAN.
@@ -51,4 +53,4 @@ Copyright (C) 2002-2003  Texas A&M University.  All Rights Reserved.
 This program is free software; you can redistribute it and/or modify it
 under the same terms as Perl itself.
 
-$Id: README,v 1.2 2003/06/16 02:42:51 jgsmith Exp $
+$Id: README,v 1.3 2003/06/17 16:33:26 jgsmith Exp $
